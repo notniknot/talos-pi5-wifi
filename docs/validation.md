@@ -249,3 +249,61 @@ The exact public `pi5.6` artifacts tested have these SHA256 values:
 
 The registry manifest digest depends on OCI-to-registry layer representation;
 verify the digest returned by your own registry when publishing the archive.
+
+## Fresh installation on a second Pi
+
+On 2026-10-10, a second Raspberry Pi 5 D0 / 8 GB with the same 2025-11-05
+EEPROM firmware and a Samsung SSD 830 Series 128 GB over USB SATA was tested
+as a separate single-node cluster. Raspberry Pi OS supplied the initial
+SSH/tryboot environment; no Ethernet or serial cable was used.
+
+The private maintenance bundle now selects its bundled device tree under
+`talos-test/`, rather than depending on the existing Pi OS device tree. The
+single-node example now patches generated `UnattendedInstallConfig` and
+`KubeNodeConfig` documents. The previous legacy-field patch conflicted with
+the documents emitted by the custom client and failed strict validation.
+Release builds now generate and strictly validate a fresh configuration with
+this example before packaging public artifacts.
+
+The exact public `pi5.6` installer identified above erased/repartitioned the
+second SSD, then booted slot A without diagnostics. STATE and EPHEMERAL were
+created on the SSD; Wi-Fi configuration survived through STATE. A new etcd
+cluster was bootstrapped with separate credentials, Kubernetes v1.37.1 became
+Ready and schedulable, all Talos health checks passed, and the DNS/HTTP smoke
+Job completed after one initial startup retry. The Pi was moved closer to the
+access point without disconnecting power while installation was in progress.
+This test does not measure sustained Wi-Fi reliability.
+
+The follow-up `pi5.7` release was built from clean project commit
+`c02c3925c11b2e44a8f7599ceaa64176948a0f7e`. Full source preparation, six Python
+tests, Wi-Fi/boot tests, image-content guards, both clients, and generated-config
+validation passed. Its disposable-disk integration test passed initial install,
+staged upgrade with unchanged active assets/GPT/STATE/EPHEMERAL, and refusal of
+pending-trial and legacy-layout upgrades without changing disk contents.
+
+The second Pi then upgraded from public `pi5.6` A to public `pi5.7` B through
+`talosctl upgrade --namespace cri --drain=false --wait`, using the default reboot
+mode and the immutable installer digest. The boot ID changed and firmware
+reported tryboot=1 with its boot count increasing by one. All Talos health checks
+and a newly created DNS/HTTP smoke Job passed; the Kubernetes node UID remained
+unchanged. Read-only EFI inspection confirmed B was committed, A remained the
+previous slot, pending/tryboot files were gone, both slots matched their expected
+public kernel/initramfs hashes, and neither slot enabled diagnostics. The
+inspection namespace was removed. No manual boot-file migration was needed.
+
+A final physical power cycle booted committed public B directly with tryboot=0,
+firmware count 1 and a new boot ID. All Talos health checks and a newly created
+DNS/HTTP smoke Job passed again, and the node UID remained unchanged. A 30-packet
+Wi-Fi check had no loss (about 19 ms mean latency); this is only a short check.
+The existing startup-clock issue remains: before NTP synchronization, the API
+briefly presented a certificate dated from 1970, and kubelet renewed its client
+certificate. The node recovered automatically; readiness took a few minutes.
+Temporary inspection and smoke-test namespaces were removed after validation.
+
+Public `pi5.7` artifact SHA256 values:
+
+- Boot bundle: `6c1a4193941f814f124735e23ec6188a74e93970a03394b754151ed6c6a6a960`.
+- Installer OCI archive: `83d1aeb9895c13ea4660b73c16005c22b1dbe1b001dbb61c09396d71685f2da8`.
+- Local-registry manifest: `4e6ab56490c71a6d0ac02c7eac0bf476836754c773c6007e1f1ff96e90286617`.
+- Kernel: `e64d3eb7f60d54dd6507b5e7635bda9b575784d11c90f301f2cba324f9341c28`.
+- Initramfs: `2aa77f09a92770169bd91f3902e132271feb4a47e2ae6140097b801697c8a932`.

@@ -5,13 +5,14 @@ onboard Wi-Fi and an SSD connected through a USB 3 SATA adapter. It boots the
 ARM64 kernel directly through Raspberry Pi firmware and installs Kubernetes
 without Ethernet or a serial debug cable.
 
-**Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.7`.** This revision
-corrects the private bootstrap device-tree path and generated single-node
-configuration example; hardware validation of this revision is in progress.
-The preceding `pi5.6` image passed native upgrades, explicit rollback, automatic
-recovery from a deliberately hung kernel, and a public cold boot over Wi-Fi.
-Exact results and limits are recorded in [validation](docs/validation.md).
-This is not an official Sidero Labs image or a production-supported distribution.
+**Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.7`.** A second Pi
+passed fresh installation of `pi5.6` and a native upgrade to this revision,
+including slot confirmation, a cold boot, cluster identity preservation and
+DNS/HTTP tests.
+The preceding `pi5.6` image also passed explicit rollback, automatic recovery
+from a deliberately hung kernel, and a public cold boot over Wi-Fi. Exact results
+and limits are recorded in [validation](docs/validation.md). This is not an
+official Sidero Labs image or a production-supported distribution.
 
 Earlier revisions exposed missing Wi-Fi modules (`pi5.1`), a default reboot error
 (`pi5.3`/`pi5.4`), and an apparent USB startup-order dependency (`pi5.5`). Use the
@@ -65,10 +66,10 @@ commits separately. See [local releases](docs/releases.md).
 
 ## Scope and known limitations
 
-The tested prototype used a D0 Pi 5 with 8 GB RAM and an Intenso 120 GB SSD through
-a USB SATA adapter. Other Pi revisions, adapters and Wi-Fi environments need
-validation. Stable Talos v1.14.2 brings kernel `6.18.54-talos`; the tested alpha
-prototype used `6.18.48-talos`.
+Hardware tests used two D0 Pi 5 boards with 8 GB RAM and USB SATA adapters,
+with an Intenso 120 GB SSD and a Samsung SSD 830 Series 128 GB. Other Pi
+revisions, adapters and Wi-Fi environments need validation. Stable Talos v1.14.2
+brings kernel `6.18.54-talos`; the tested alpha prototype used `6.18.48-talos`.
 
 - Upgrades use two boot slots and firmware tryboot with a hardware watchdog.
   Legacy `pi5.1`/`pi5.2` installations need a
@@ -84,9 +85,9 @@ prototype used `6.18.48-talos`.
 - Wi-Fi power saving is disabled for this Pi profile. Keep the antenna clear of
   the USB SSD/dock, and provide a suitable power supply. RF placement mattered in
   the prototype.
-- Fresh installation of the current A/B image, long-term Wi-Fi reliability,
-  multi-node operation and secure boot remain unvalidated. See the recorded
-  hardware tests rather than treating a successful build as full qualification.
+- Long-term Wi-Fi reliability, multi-node operation and secure boot remain
+  unvalidated. See the recorded hardware tests rather than treating a successful
+  build as full qualification.
 
 ## Sources and license
 
