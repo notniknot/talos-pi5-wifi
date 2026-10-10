@@ -1,5 +1,5 @@
 diff --git a/Dockerfile b/Dockerfile
-index df1cf7b..2d3d302 100644
+index df1cf7b..fbdf8e0 100644
 --- a/Dockerfile
 +++ b/Dockerfile
 @@ -12,6 +12,8 @@ ARG TOOLS_PREFIX=scratch
@@ -59,7 +59,7 @@ index df1cf7b..2d3d302 100644
  RUN rm -rf /rootfs/usr/share/spdx/*
  COPY --link --from=sbom-arm64 / /rootfs/usr/share/spdx/
  ARG SOURCE_DATE_EPOCH
-@@ -1539,3 +1561,39 @@ COPY --link --from=docs-build /tmp/schemas /website/content/v1.14/schemas/
+@@ -1539,3 +1561,42 @@ COPY --link --from=docs-build /tmp/schemas /website/content/v1.14/schemas/
  FROM scratch AS talosctl-cni-bundle
  ARG TARGETARCH
  COPY --link --from=pkgs-talosctl-cni-bundle /opt/cni/bin/ /talosctl-cni-bundle-${TARGETARCH}/
@@ -80,6 +80,9 @@ index df1cf7b..2d3d302 100644
 +
 +# Dedicated initial-install image; build with RPI5_EMBED_CONFIG=false.
 +FROM installer-base AS rpi5-installer
++LABEL org.opencontainers.image.source="https://github.com/notniknot/talos-pi5-wifi"
++LABEL org.opencontainers.image.title="Talos Pi 5 Wi-Fi installer"
++LABEL org.opencontainers.image.version="${VERSION}"
 +COPY --link --from=install-artifacts-arm64 / /
 +COPY --link --from=pkg-kernel-arm64 /boot/Image /usr/install/rpi5/Image
 +COPY --link hack/rpi5-boot/ /usr/install/rpi5/
