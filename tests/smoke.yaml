@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pi5-smoke-test
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: pi5-smoke-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pi5-smoke-web
+  template:
+    metadata:
+      labels:
+        app: pi5-smoke-web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: busybox:1.37.0
+          command: [sh, -ec]
+          args:
+            - printf 'talos-pi5-ok\n' > /www/index.html; exec httpd -f -p 8080 -h /www
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+          volumeMounts:
+            - name: content
+              mountPath: /www
+      volumes:
+        - name: content
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: pi5-smoke-test
+spec:
+  selector:
+    app: pi5-smoke-web
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: networking
+  namespace: pi5-smoke-test
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: check
+          image: busybox:1.37.0
+          command: [sh, -ec]
+          args:
+            - |
+              nslookup kubernetes.default.svc.cluster.local
+              nslookup registry.k8s.io
+              for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                if wget -qO- -T 5 http://web:8080 | grep -x talos-pi5-ok; then exit 0; fi
+                sleep 3
+              done
+              exit 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi

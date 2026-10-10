@@ -1,0 +1,8 @@
+[registry."localhost:5000"]
+  http = true
+  insecure = true
+[worker.oci]
+  gc = true
+  max-parallelism = 6
+  reservedSpace = "20GB"
+  maxUsedSpace = "140GB"

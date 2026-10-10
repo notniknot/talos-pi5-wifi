@@ -1,0 +1,1 @@
+talos.platform=metal talos.config=none console=tty0 panic=10 net.ifnames=0 slab_nomerge pti=on consoleblank=0 printk.devkmsg=on selinux=1 module.sig_enforce=1 proc_mem.force_override=never talos.dashboard.disabled=1 sysctl.kernel.kexec_load_disabled=1 talos.rpi5.wifi_no_ps=1

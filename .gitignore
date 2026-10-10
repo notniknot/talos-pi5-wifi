@@ -1,0 +1,8 @@
+/talos/
+/pkgs/
+/_out/
+/private/
+/bin/
+*.log
+__pycache__/
+.DS_Store

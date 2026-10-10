@@ -1,0 +1,13 @@
+# One-time direct boot; Raspberry Pi OS config.txt remains unchanged.
+arm_64bit=1
+arm_boost=1
+gpu_mem=32
+enable_uart=0
+auto_initramfs=0
+usb_max_current_enable=1
+kernel=talos-test/Image
+initramfs talos-test/initramfs-arm64.xz followkernel
+cmdline=talos-test/cmdline.txt
+device_tree=bcm2712d0-rpi-5-b.dtb
+overlay_prefix=talos-test/overlays/
+dtoverlay=disable-v3d

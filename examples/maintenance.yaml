@@ -1,0 +1,17 @@
+# Example only. Use scripts/wifi-config.py to create private/maintenance.yaml.
+apiVersion: v1alpha1
+kind: WifiConfig
+name: wlan0
+countryCode: DE # Set the country where the Pi operates.
+networks:
+  - ssid: YOUR_SSID
+    psk: CHANGE_THIS_PASSPHRASE
+---
+apiVersion: v1alpha1
+kind: LinkConfig
+name: wlan0
+up: true
+---
+apiVersion: v1alpha1
+kind: DHCPv4Config
+name: wlan0

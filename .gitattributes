@@ -1,0 +1,6 @@
+*.dtb binary
+*.dtbo binary
+*.patch -text
+# Patch context whitespace and verbatim upstream notices must be preserved.
+*.patch -whitespace
+licenses/* -whitespace

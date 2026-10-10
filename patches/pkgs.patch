@@ -1,0 +1,316 @@
+diff --git a/Makefile b/Makefile
+index 8eb0e59..5617ea2 100644
+--- a/Makefile
++++ b/Makefile
+@@ -127,6 +127,8 @@ TARGETS += systemd-udevd
+ TARGETS += talosctl-cni-bundle
+ TARGETS += tar
+ TARGETS += util-linux
++TARGETS += wireless-regdb
++TARGETS += wpa-supplicant
+ TARGETS += xfsprogs
+ TARGETS += xz
+ TARGETS += zlib
+diff --git a/Pkgfile b/Pkgfile
+index 42bc68f..d868737 100644
+--- a/Pkgfile
++++ b/Pkgfile
+@@ -300,6 +300,16 @@ vars:
+   tenstorrent_sha256: 26a0980688abc7bcc5b89c8c22777e3dead2c59b4244b780d968580eae727d55
+   tenstorrent_sha512: eb36b04dc5416e262fbe5195249a26de1351d8921055d568abc97b6e84d556e959236db8cc3a05aa8c571334d8cd00077e02e2b200ce0c629e2858a4234831d8
+ 
++  # renovate: datasource=custom.html depName=wireless-regdb registryUrl=https://www.kernel.org/pub/software/network/wireless-regdb/
++  wireless_regdb_version: 2026.05.30
++  wireless_regdb_sha256: 8a27bfc081bafed8c24dd70fab0d96f098e5a0bfcd08d3da672595f225ab8993
++  wireless_regdb_sha512: db06f3115051c030f749419f074543309e24626ebdd59d468c56ac3130f38a6c9e4a69ecebbc3bf65d0cdf9876d9c0de0703e00fc9afb402ab2b1a8a0ca1e146
++
++  # renovate: datasource=custom.html depName=wpa_supplicant registryUrl=https://w1.fi/releases/
++  wpa_supplicant_version: 2.11
++  wpa_supplicant_sha256: 912ea06f74e30a8e36fbb68064d6cdff218d8d591db0fc5d75dee6c81ac7fc0a
++  wpa_supplicant_sha512: 9a0a3a9d6fa2235903c40aa57b5955f0c9dd1dccfd0e3825a3b6f92b3e32db8d464b3ea0aef3285ba3ee109e7b190560cedd744902e954f0003cdba543e277b2
++
+   # renovate: datasource=git-refs versioning=git depName=https://github.com/Xilinx/dma_ip_drivers.git
+   xdma_driver_ref: 8721136e74a66500b02d16cb41922d966139cd46
+   xdma_driver_sha256: b228eb88ef54a3ca11cde87951de395ad5e3172b2a72e060d2aad29547f87360
+diff --git a/kernel/build/config-arm64 b/kernel/build/config-arm64
+index b675aad..0229397 100644
+--- a/kernel/build/config-arm64
++++ b/kernel/build/config-arm64
+@@ -1913,13 +1913,30 @@ CONFIG_STREAM_PARSER=y
+ # CONFIG_MCTP is not set
+ CONFIG_FIB_RULES=y
+ CONFIG_WIRELESS=y
+-# CONFIG_CFG80211 is not set
+-
+-#
+-# CFG80211 needs to be enabled for MAC80211
+-#
++CONFIG_CFG80211=m
++# CONFIG_NL80211_TESTMODE is not set
++# CONFIG_CFG80211_DEVELOPER_WARNINGS is not set
++# CONFIG_CFG80211_CERTIFICATION_ONUS is not set
++CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y
++CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y
++CONFIG_CFG80211_DEFAULT_PS=y
++# CONFIG_CFG80211_DEBUGFS is not set
++CONFIG_CFG80211_CRDA_SUPPORT=y
++# CONFIG_CFG80211_WEXT is not set
++CONFIG_MAC80211=m
++CONFIG_MAC80211_HAS_RC=y
++CONFIG_MAC80211_RC_MINSTREL=y
++CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y
++CONFIG_MAC80211_RC_DEFAULT="minstrel_ht"
++# CONFIG_MAC80211_MESH is not set
++CONFIG_MAC80211_LEDS=y
++# CONFIG_MAC80211_MESSAGE_TRACING is not set
++# CONFIG_MAC80211_DEBUG_MENU is not set
+ CONFIG_MAC80211_STA_HASH_MAX_SIZE=0
+-# CONFIG_RFKILL is not set
++CONFIG_RFKILL=y
++CONFIG_RFKILL_LEDS=y
++# CONFIG_RFKILL_INPUT is not set
++# CONFIG_RFKILL_GPIO is not set
+ # CONFIG_NET_9P is not set
+ # CONFIG_CAIF is not set
+ CONFIG_CEPH_LIB=y
+@@ -3449,6 +3466,7 @@ CONFIG_USB_NET_ZAURUS=m
+ CONFIG_USB_NET_CX82310_ETH=m
+ CONFIG_USB_NET_KALMIA=m
+ CONFIG_USB_NET_QMI_WWAN=m
++# CONFIG_USB_HSO is not set
+ CONFIG_USB_NET_INT51X1=m
+ CONFIG_USB_IPHETH=m
+ CONFIG_USB_SIERRA_NET=m
+@@ -3456,7 +3474,117 @@ CONFIG_USB_VL600=m
+ CONFIG_USB_NET_CH9200=m
+ CONFIG_USB_NET_AQC111=m
+ CONFIG_USB_RTL8153_ECM=m
+-# CONFIG_WLAN is not set
++CONFIG_WLAN=y
++CONFIG_WLAN_VENDOR_ADMTEK=y
++# CONFIG_ADM8211 is not set
++CONFIG_WLAN_VENDOR_ATH=y
++# CONFIG_ATH_DEBUG is not set
++# CONFIG_ATH5K is not set
++# CONFIG_ATH5K_PCI is not set
++# CONFIG_ATH9K is not set
++# CONFIG_ATH9K_HTC is not set
++# CONFIG_CARL9170 is not set
++# CONFIG_ATH6KL is not set
++# CONFIG_AR5523 is not set
++# CONFIG_WIL6210 is not set
++# CONFIG_ATH10K is not set
++# CONFIG_WCN36XX is not set
++# CONFIG_ATH11K is not set
++# CONFIG_ATH12K is not set
++CONFIG_WLAN_VENDOR_ATMEL=y
++# CONFIG_AT76C50X_USB is not set
++CONFIG_WLAN_VENDOR_BROADCOM=y
++# CONFIG_B43 is not set
++# CONFIG_B43LEGACY is not set
++# CONFIG_BRCMSMAC is not set
++CONFIG_BRCMFMAC=m
++CONFIG_BRCMFMAC_SDIO=y
++# CONFIG_BRCMFMAC_USB is not set
++# CONFIG_BRCMFMAC_PCIE is not set
++CONFIG_WLAN_VENDOR_INTEL=y
++# CONFIG_IPW2100 is not set
++# CONFIG_IPW2200 is not set
++# CONFIG_IWL4965 is not set
++# CONFIG_IWL3945 is not set
++CONFIG_IWLWIFI=m
++CONFIG_IWLWIFI_LEDS=y
++# CONFIG_IWLDVM is not set
++CONFIG_IWLMVM=m
++# CONFIG_IWLMLD is not set
++CONFIG_IWLWIFI_OPMODE_MODULAR=y
++
++#
++# Debugging Options
++#
++# CONFIG_IWLWIFI_DEBUG is not set
++CONFIG_IWLWIFI_DEVICE_TRACING=y
++# end of Debugging Options
++
++CONFIG_WLAN_VENDOR_INTERSIL=y
++# CONFIG_P54_COMMON is not set
++CONFIG_WLAN_VENDOR_MARVELL=y
++# CONFIG_LIBERTAS is not set
++# CONFIG_LIBERTAS_THINFIRM is not set
++# CONFIG_MWIFIEX is not set
++# CONFIG_MWL8K is not set
++CONFIG_WLAN_VENDOR_MEDIATEK=y
++# CONFIG_MT7601U is not set
++# CONFIG_MT76x0U is not set
++# CONFIG_MT76x0E is not set
++# CONFIG_MT76x2E is not set
++# CONFIG_MT76x2U is not set
++# CONFIG_MT7603E is not set
++# CONFIG_MT7615E is not set
++# CONFIG_MT7663U is not set
++# CONFIG_MT7663S is not set
++# CONFIG_MT7915E is not set
++# CONFIG_MT7921E is not set
++# CONFIG_MT7921S is not set
++# CONFIG_MT7921U is not set
++# CONFIG_MT7996E is not set
++# CONFIG_MT7925E is not set
++# CONFIG_MT7925U is not set
++CONFIG_WLAN_VENDOR_MICROCHIP=y
++# CONFIG_WILC1000_SDIO is not set
++# CONFIG_WILC1000_SPI is not set
++CONFIG_WLAN_VENDOR_PURELIFI=y
++# CONFIG_PLFXLC is not set
++CONFIG_WLAN_VENDOR_RALINK=y
++# CONFIG_RT2X00 is not set
++CONFIG_WLAN_VENDOR_REALTEK=y
++# CONFIG_RTL8180 is not set
++# CONFIG_RTL8187 is not set
++CONFIG_RTL_CARDS=m
++# CONFIG_RTL8192CE is not set
++# CONFIG_RTL8192SE is not set
++# CONFIG_RTL8192DE is not set
++# CONFIG_RTL8723AE is not set
++# CONFIG_RTL8723BE is not set
++# CONFIG_RTL8188EE is not set
++# CONFIG_RTL8192EE is not set
++# CONFIG_RTL8821AE is not set
++# CONFIG_RTL8192CU is not set
++# CONFIG_RTL8192DU is not set
++# CONFIG_RTL8XXXU is not set
++# CONFIG_RTW88 is not set
++# CONFIG_RTW89 is not set
++CONFIG_WLAN_VENDOR_RSI=y
++# CONFIG_RSI_91X is not set
++CONFIG_WLAN_VENDOR_SILABS=y
++# CONFIG_WFX is not set
++CONFIG_WLAN_VENDOR_ST=y
++# CONFIG_CW1200 is not set
++CONFIG_WLAN_VENDOR_TI=y
++# CONFIG_WL1251 is not set
++# CONFIG_WL12XX is not set
++# CONFIG_WL18XX is not set
++# CONFIG_WLCORE is not set
++CONFIG_WLAN_VENDOR_ZYDAS=y
++# CONFIG_ZD1211RW is not set
++CONFIG_WLAN_VENDOR_QUANTENNA=y
++# CONFIG_QTNFMAC_PCIE is not set
++# CONFIG_MAC80211_HWSIM is not set
++# CONFIG_VIRT_WIFI is not set
+ # CONFIG_WAN is not set
+ 
+ #
+diff --git a/kernel/build/pkg.yaml b/kernel/build/pkg.yaml
+index 40f25d5..121c5a5 100644
+--- a/kernel/build/pkg.yaml
++++ b/kernel/build/pkg.yaml
+@@ -13,6 +13,7 @@ steps:
+         cd /src
+         cp -v /pkg/config-${CARCH} .config
+         cp -v /pkg/certs/* certs/
++        make olddefconfig
+       - |
+         cd /src
+         for patch in $(find /pkg/patches -type f -name "*.patch" | sort); do
+diff --git a/kernel/kernel/pkg.yaml b/kernel/kernel/pkg.yaml
+index f2a8e5e..f154075 100644
+--- a/kernel/kernel/pkg.yaml
++++ b/kernel/kernel/pkg.yaml
+@@ -20,6 +20,7 @@ steps:
+                 mv arch/x86/boot/bzImage /rootfs/boot/vmlinuz
+             ;;
+             arm64)
++                cp arch/arm64/boot/Image /rootfs/boot/Image
+                 mv arch/arm64/boot/vmlinuz.efi /rootfs/boot/vmlinuz
+                 cd ./arch/arm64/boot/dts
+                 for vendor in $(find . -not -path . -type d); do
+diff --git a/wireless-regdb/pkg.yaml b/wireless-regdb/pkg.yaml
+new file mode 100644
+index 0000000..5bf5056
+--- /dev/null
++++ b/wireless-regdb/pkg.yaml
+@@ -0,0 +1,31 @@
++name: wireless-regdb
++variant: scratch
++shell: /bin/bash
++dependencies:
++  - stage: base
++steps:
++  - sources:
++      - url: https://www.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-{{ .wireless_regdb_version }}.tar.xz
++        destination: wireless-regdb.tar.xz
++        sha256: "{{ .wireless_regdb_sha256 }}"
++        sha512: "{{ .wireless_regdb_sha512 }}"
++    prepare:
++      - |
++        tar -xf wireless-regdb.tar.xz --strip-components=1
++    install:
++      - |
++        install -D -m 0644 regulatory.db /rootfs/usr/lib/firmware/regulatory.db
++        install -D -m 0644 regulatory.db.p7s /rootfs/usr/lib/firmware/regulatory.db.p7s
++    test:
++      - |
++        fhs-validator /rootfs
++    sbom:
++      outputPath: /rootfs/usr/share/spdx/wireless-regdb.spdx.json
++      version: {{ .wireless_regdb_version }}
++      cpes:
++        - cpe:2.3:a:kernel:wireless-regdb:{{ .wireless_regdb_version }}:*:*:*:*:*:*:*
++      licenses:
++        - ISC
++finalize:
++  - from: /rootfs
++    to: /
+diff --git a/wpa-supplicant/pkg.yaml b/wpa-supplicant/pkg.yaml
+new file mode 100644
+index 0000000..d6e60a0
+--- /dev/null
++++ b/wpa-supplicant/pkg.yaml
+@@ -0,0 +1,47 @@
++name: wpa-supplicant
++variant: scratch
++shell: /bin/bash
++dependencies:
++  - stage: base
++steps:
++  - sources:
++      - url: https://w1.fi/releases/wpa_supplicant-{{ .wpa_supplicant_version }}.tar.gz
++        destination: wpa_supplicant.tar.gz
++        sha256: "{{ .wpa_supplicant_sha256 }}"
++        sha512: "{{ .wpa_supplicant_sha512 }}"
++    prepare:
++      - |
++        tar -xzf wpa_supplicant.tar.gz --strip-components=1
++
++        cat > wpa_supplicant/.config <<'EOF'
++        CONFIG_DRIVER_NL80211=y
++        CONFIG_LIBNL32=y
++        CONFIG_TLS=openssl
++        CONFIG_CTRL_IFACE=y
++        CONFIG_BACKEND=file
++        CONFIG_IEEE80211W=y
++        CONFIG_SAE=y
++        CONFIG_NO_ROAMING=y
++        EOF
++    build:
++      - |
++        make -C wpa_supplicant -j $(nproc) LDFLAGS="-static" wpa_supplicant wpa_cli wpa_passphrase
++    install:
++      - |
++        install -D -m 0755 wpa_supplicant/wpa_supplicant /rootfs/usr/bin/wpa_supplicant
++        install -D -m 0755 wpa_supplicant/wpa_cli /rootfs/usr/bin/wpa_cli
++        install -D -m 0755 wpa_supplicant/wpa_passphrase /rootfs/usr/bin/wpa_passphrase
++        strip /rootfs/usr/bin/wpa_supplicant /rootfs/usr/bin/wpa_cli /rootfs/usr/bin/wpa_passphrase
++    test:
++      - |
++        fhs-validator /rootfs
++    sbom:
++      outputPath: /rootfs/usr/share/spdx/wpa-supplicant.spdx.json
++      version: {{ .wpa_supplicant_version }}
++      cpes:
++        - cpe:2.3:a:w1.fi:wpa_supplicant:{{ .wpa_supplicant_version }}:*:*:*:*:*:*:*
++      licenses:
++        - BSD-3-Clause
++finalize:
++  - from: /rootfs
++    to: /

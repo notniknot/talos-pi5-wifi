@@ -1,0 +1,51 @@
+{
+  "upstream_version": "v1.14.2",
+  "default_version": "v1.14.2-pi5.1",
+  "kernel_version": "6.18.54-talos",
+  "talos": {
+    "origin": "https://github.com/siderolabs/talos.git",
+    "commit": "f513c7358cefc69255e29b517ba96c651e0326ad"
+  },
+  "pkgs": {
+    "origin": "https://github.com/siderolabs/pkgs.git",
+    "commit": "6c312e4b77817a9c1bd4975a532b3fd23d33430c"
+  },
+  "wifi_backport": {
+    "origin": "https://github.com/dot8development/talos-wifi.git",
+    "base": "d5f53edee65a1ab879cbff0289980f5fe062b6c8",
+    "commit": "0abf5f5f887939226916b3412c891f8a39ee4bc7"
+  },
+  "device_tree": {
+    "origin": "https://github.com/siderolabs/sbc-raspberrypi.git",
+    "commit": "7aba05ed529e837959cfd15636d53c4e43fb39f2",
+    "linux_tag": "stable_20260724",
+    "modification": "Removed cgroup_disable=memory from /chosen/bootargs",
+    "assets": {
+      "bcm2712d0-rpi-5-b.dtb": "c8c10f12c20b96ac87376e81b277e5f5731e52aa596c24fb05c25e52525e056c",
+      "overlays/disable-v3d.dtbo": "aec2cfc15bc8e4062f38b817e860b005e6fcb33d3563aa409a9a305a4d595062",
+      "talos-rpi5-direct": "aeedc3a64ea67816e1af431b3c356706bfc816289326f508ccfa2321a02d4b77"
+    }
+  },
+  "firmware": [
+    {
+      "url": "https://raw.githubusercontent.com/RPi-Distro/firmware-nonfree/3bab0f823f5b53150b76aab77093adef6655b920/debian/added-firmware/cypress/cyfmac43455-sdio-standard.bin",
+      "sha256": "d608f866582519c0a28d86db43040f4f1b98dd1d153e72e9752586546b4a36c3",
+      "name": "brcmfmac43455-sdio.bin"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/RPi-Distro/firmware-nonfree/3bab0f823f5b53150b76aab77093adef6655b920/debian/added-firmware/cypress/cyfmac43455-sdio.clm_blob",
+      "sha256": "9823842cae9fb9a5dd1e5fb31f595516ec7deee341354bef30bb3026eee29cc1",
+      "name": "brcmfmac43455-sdio.clm_blob"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/RPi-Distro/firmware-nonfree/3bab0f823f5b53150b76aab77093adef6655b920/debian/added-firmware/brcm/brcmfmac43455-sdio.txt",
+      "sha256": "ca709be81a78bdb6932936374f39943acbd7af07fae6151011127599a3ce9e3d",
+      "name": "brcmfmac43455-sdio.txt"
+    }
+  ],
+  "wifi_packages_backport": {
+    "origin": "https://github.com/dot8development/pkgs.git",
+    "base": "4b9bf36f402384842238f2f191451ba90e7bc3ef",
+    "commit": "5c05b53870b9f45654fae8161b8a3fcdbf962306"
+  }
+}

@@ -1,0 +1,152 @@
+# One Pi, one control plane
+
+This is a development procedure, not an unattended installer. The stable port
+has not yet passed real-hardware validation. Keep a copy of the existing Pi OS
+boot partition and a recoverable OS disk or SD card. A USB-C connection to a dock
+powers the Pi; the procedure reaches it over the network, not through USB-C SSH.
+
+## 1. Tryboot from Raspberry Pi OS
+
+Start with a Pi already reachable through Raspberry Pi OS SSH. Confirm it is the
+D0 Pi 5 revision, the SSD really is the intended USB device, USB boot is enabled
+in EEPROM, and the power supply is adequate. Record `lsblk -o NAME,SIZE,MODEL,SERIAL`
+and back up the existing disk/boot files somewhere off the Pi.
+
+Build the private maintenance image and `_out/private-boot` directory using
+[the build guide](building.md). This directory contains Wi-Fi credentials. Copy
+it over SSH into a private directory on the Pi (replace the example host):
+
+```sh
+scp -r _out/private-boot admin@PI_ADDRESS:talos-boot-test
+ssh admin@PI_ADDRESS
+```
+
+On the Pi, confirm the boot partition has enough free space (bundle size plus
+at least 32 MiB), and that `tryboot.txt` / `talos-test` do not already exist. Save
+the original `config.txt` checksum. Then stage the files:
+
+```sh
+cd ~/talos-boot-test
+sha256sum -c SHA256SUMS
+df -h /boot/firmware
+sudo test ! -e /boot/firmware/tryboot.txt
+sudo test ! -e /boot/firmware/talos-test
+sudo cp -r talos-test /boot/firmware/
+sudo cp tryboot.txt /boot/firmware/
+cd /boot/firmware
+sha256sum -c "$HOME/talos-boot-test/SHA256SUMS"
+sync
+sudo reboot '0 tryboot'
+```
+
+Use the EEPROM firmware's one-time tryboot mechanism. A later normal power cycle
+returns to the original Raspberry Pi OS configuration. This recovery applies
+**only before the SSD is erased by installation**. The bundle does not alter
+`config.txt` and does not automatically reboot after a timeout.
+
+Use the newly built custom talosctl (export its absolute path as `TALOSCTL`):
+
+```sh
+export PI=192.0.2.10 # Replace with the Pi's actual DHCP address.
+"$TALOSCTL" -n "$PI" version --insecure
+"$TALOSCTL" -n "$PI" get wifistatuses --insecure
+"$TALOSCTL" -n "$PI" get disks --insecure
+```
+
+The address above is a documentation placeholder. Talos has no SSH server. Its
+maintenance API uses `--insecure`; use it only on your trusted provisioning
+network. Confirm the node's identity and SSD size/model before proceeding.
+
+## 2. Make the public installer reachable
+
+Load `_out/installer/installer-arm64.oci.tar` into a registry reachable from the Pi.
+For example, after authentication, use `skopeo copy` to publish the installer to
+GHCR as described in [releases](releases.md). A loopback-only builder registry is
+not reachable from the Pi. A private registry needs machine registry credentials;
+keep those in private configuration. Do not publish the private initramfs.
+
+The installer contains a public rootfs with the Wi-Fi driver/firmware. Permanent
+Wi-Fi configuration must be present in the applied machine configuration and
+persisted in Talos STATE.
+
+## 3. Generate and apply single-node configuration
+
+`examples/single-node.patch.yaml` selects `/dev/sda`; verify that this is your SSD
+and update the installer reference if using another registry. `wipe: false`
+is **not protection for an existing Raspberry Pi OS disk**: initial installation
+repartitions it. Applying the control-plane config starts that destructive install.
+Do not continue until backups and temporary-boot networking are verified.
+
+```sh
+umask 077
+mkdir -p private/cluster
+"$TALOSCTL" gen config pi5-lab "https://$PI:6443" \
+  --output-dir private/cluster \
+  --config-patch @examples/single-node.patch.yaml
+# Append the SAME Wi-Fi documents used by the private maintenance image.
+printf '\n---\n' >> private/cluster/controlplane.yaml
+cat private/maintenance.yaml >> private/cluster/controlplane.yaml
+"$TALOSCTL" validate --config private/cluster/controlplane.yaml --mode metal --strict
+"$TALOSCTL" -n "$PI" apply-config --insecure --file private/cluster/controlplane.yaml
+```
+
+Once the authenticated API is available:
+
+```sh
+export TALOSCONFIG="$PWD/private/cluster/talosconfig"
+"$TALOSCTL" config endpoint "$PI"
+"$TALOSCTL" config node "$PI"
+"$TALOSCTL" bootstrap
+"$TALOSCTL" kubeconfig private/cluster/kubeconfig
+export KUBECONFIG="$PWD/private/cluster/kubeconfig"
+"$TALOSCTL" health
+kubectl get nodes -o wide
+kubectl apply -f tests/smoke.yaml
+kubectl -n pi5-smoke-test rollout status deployment/web --timeout=180s
+kubectl -n pi5-smoke-test wait --for=condition=complete job/networking --timeout=300s
+```
+
+Check [the smoke manifest](../tests/smoke.yaml) for the current labels/service
+names and run the DNS/HTTP probes in [validation](validation.md). Reserve a stable
+DHCP address for the Pi or use an appropriate stable endpoint before relying on it.
+
+The config and kubeconfig generated here are private and are not added to global
+contexts automatically. You can merge them explicitly using `talosctl config
+merge` and your normal kubeconfig workflow after validation.
+
+## Reset and recovery
+
+For this custom layout, **do not run an unqualified full-disk reset**. To rebuild
+the cluster while preserving EFI boot assets, the alpha prototype successfully
+used this targeted reset:
+
+```sh
+"$TALOSCTL" reset --system-labels-to-wipe STATE,EPHEMERAL \
+  --wipe-mode system-disk --graceful=false --reboot
+```
+
+It permanently deletes the node's cluster configuration and data. The prototype
+returned to Wi-Fi maintenance because its recovered boot initramfs contained
+private maintenance credentials. **A public installer initramfs has no embedded
+Wi-Fi config, so after wiping STATE it cannot reconnect to your Wi-Fi by itself.**
+For Wi-Fi-only reset recovery, keep a tested private maintenance boot medium/image
+available before resetting. This behavior needs revalidation on the stable port.
+
+If boot is offline, try one cold power cycle to distinguish warm USB adapter
+recovery from a repeatable boot failure. If it stays offline, power off, attach
+the SSD to another machine and inspect the EFI boot partition. Preserve an image
+of that partition before editing. On a Mac, use `diskutil list` and positively
+identify the SSD; never reuse someone else's `diskN` identifier.
+
+To opt into early diagnostics, append `talos.rpi5.diag=1` to EFI `cmdline.txt` and
+copy that command line into an EFI `talos-test/cmdline.txt` marker file. Do not
+add `talos.rpi5.test_timeout` to a permanent installation. After a failed boot,
+retrieve `talos-test/boot-*.log` locally. This diagnostic code assumes the USB SSD
+is `/dev/sda1`; do not use it on another layout without adapting the source.
+
+The alpha prototype recovered after replacing EFI's initramfs with the matching
+private initramfs and enabling diagnostics. Keep kernel and initramfs from the
+same build; never mix the alpha kernel with stable modules. Diagnostics also load
+USB modules early, so that recovery does not prove whether credentials or USB
+initialization caused the original failure. A public stable cold boot is a
+required validation step before calling this port reliable.
