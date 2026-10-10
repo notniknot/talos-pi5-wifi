@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import runpy
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,6 +34,19 @@ class BuildInputs(unittest.TestCase):
     def test_checksum_mismatch_is_rejected(self):
         with self.assertRaises(ValueError):
             load('prepare').checked(b'changed', hashlib.sha256(b'original').hexdigest(), 'firmware')
+
+    def test_wifi_generator_private_file_and_no_overwrite(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / 'maintenance.yaml'
+            argv = ['wifi-config.py', '--output', str(output)]
+            with patch('sys.argv', argv), patch('builtins.input', side_effect=['Example "SSID"', 'DE']), patch('getpass.getpass', return_value='example-password'):
+                runpy.run_path(str(ROOT / 'scripts/wifi-config.py'), run_name='__main__')
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            before = output.read_bytes()
+            with patch('sys.argv', argv), patch('builtins.input', side_effect=['OtherSSID', 'DE']), patch('getpass.getpass', return_value='different-password'):
+                with self.assertRaises(FileExistsError):
+                    runpy.run_path(str(ROOT / 'scripts/wifi-config.py'), run_name='__main__')
+            self.assertEqual(output.read_bytes(), before)
 
     def test_public_bundle_uses_public_initramfs(self):
         assemble = load('assemble-boot')

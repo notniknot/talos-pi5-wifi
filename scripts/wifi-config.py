@@ -17,8 +17,8 @@ country = input('Two-letter regulatory country code: ').upper()
 password = getpass.getpass('Wi-Fi passphrase: ')
 if not 1 <= len(ssid.encode()) <= 32 or not re.fullmatch('[A-Z]{2}', country):
     parser.error('Invalid SSID length or country code')
-if not 8 <= len(password) <= 63:
-    parser.error('Passphrase must contain 8 to 63 characters')
+if not 8 <= len(password.encode()) <= 63:
+    parser.error('Passphrase must contain 8 to 63 UTF-8 bytes')
 if args.wpa2_derived_key:
     password = hashlib.pbkdf2_hmac('sha1', password.encode(), ssid.encode(), 4096, 32).hex()
 quote = json.dumps
