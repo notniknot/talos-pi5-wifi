@@ -1,5 +1,5 @@
 diff --git a/Dockerfile b/Dockerfile
-index df1cf7b..b4e139b 100644
+index df1cf7b..2941275 100644
 --- a/Dockerfile
 +++ b/Dockerfile
 @@ -12,6 +12,8 @@ ARG TOOLS_PREFIX=scratch
@@ -59,7 +59,7 @@ index df1cf7b..b4e139b 100644
  RUN rm -rf /rootfs/usr/share/spdx/*
  COPY --link --from=sbom-arm64 / /rootfs/usr/share/spdx/
  ARG SOURCE_DATE_EPOCH
-@@ -1539,3 +1561,56 @@ COPY --link --from=docs-build /tmp/schemas /website/content/v1.14/schemas/
+@@ -1539,3 +1561,58 @@ COPY --link --from=docs-build /tmp/schemas /website/content/v1.14/schemas/
  FROM scratch AS talosctl-cni-bundle
  ARG TARGETARCH
  COPY --link --from=pkgs-talosctl-cni-bundle /opt/cni/bin/ /talosctl-cni-bundle-${TARGETARCH}/
@@ -71,7 +71,9 @@ index df1cf7b..b4e139b 100644
 +
 +FROM base AS rpi5-boot-tests
 +RUN --mount=type=cache,target=/.cache,id=talos/.cache \
-+    go test -p 2 ./internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5
++    go test -p 2 ./internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5 \
++    && go test -p 2 -run 'UpgradeFallback|WatchdogTimer' ./internal/app/machined/pkg/controllers/runtime \
++    && go test -p 2 -run 'TestNewSequencer|TestPreShutdown' ./internal/app/machined/pkg/runtime/v1alpha1
 +
 +FROM rootfs-squashfs-arm64 AS rpi5-public-rootfs-check
 +RUN test "${RPI5_EMBED_CONFIG}" = false \
@@ -156,7 +158,7 @@ index 07d782b..a002351 100755
  message WireguardPeer {
    string public_key = 1;
 diff --git a/cmd/installer/pkg/install/install.go b/cmd/installer/pkg/install/install.go
-index 8637877..d17ef0e 100644
+index 8637877..028f7e2 100644
 --- a/cmd/installer/pkg/install/install.go
 +++ b/cmd/installer/pkg/install/install.go
 @@ -31,6 +31,7 @@ import (
@@ -167,7 +169,7 @@ index 8637877..d17ef0e 100644
  	"github.com/siderolabs/talos/internal/pkg/meta"
  	"github.com/siderolabs/talos/internal/pkg/partition"
  	"github.com/siderolabs/talos/pkg/imager/overlay/executor"
-@@ -233,13 +234,20 @@ func (i *Installer) detectBootloader(mode Mode) (bootloaderpkg.Bootloader, error
+@@ -233,13 +234,22 @@ func (i *Installer) detectBootloader(mode Mode) (bootloaderpkg.Bootloader, error
  	case ModeInstall:
  		return bootloaderpkg.NewAuto(), nil
  	case ModeUpgrade:
@@ -182,8 +184,10 @@ index 8637877..d17ef0e 100644
 +		if err != nil {
 +			return nil, err
 +		}
-+		if _, directPiBoot := loader.(*rpi5.Bootloader); directPiBoot {
-+			return nil, errors.New("Pi 5 direct boot upgrades are not supported yet; refusing before disk changes")
++		if pi, directPiBoot := loader.(*rpi5.Bootloader); directPiBoot {
++			if err := pi.CheckUpgrade(); err != nil {
++				return nil, err
++			}
 +		}
 +		return loader, nil
  	case ModeImage:
@@ -267,10 +271,18 @@ index d7ca37b..93a0846 100644
  
  	if err := run(); err != nil {
 diff --git a/internal/app/machined/main.go b/internal/app/machined/main.go
-index f4337a1..418f89f 100644
+index f4337a1..0693592 100644
 --- a/internal/app/machined/main.go
 +++ b/internal/app/machined/main.go
-@@ -40,6 +40,7 @@ import (
+@@ -32,6 +32,7 @@ import (
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime"
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/emergency"
+ 	v1alpha1runtime "github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1"
++	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5"
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/sandboxd"
+ 	startuptasks "github.com/siderolabs/talos/internal/app/machined/pkg/startup"
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/system"
+@@ -40,6 +41,7 @@ import (
  	"github.com/siderolabs/talos/internal/app/trustd"
  	"github.com/siderolabs/talos/internal/pkg/containermode"
  	"github.com/siderolabs/talos/internal/pkg/mount/v3"
@@ -278,7 +290,19 @@ index f4337a1..418f89f 100644
  	"github.com/siderolabs/talos/pkg/httpdefaults"
  	"github.com/siderolabs/talos/pkg/machinery/api/common"
  	"github.com/siderolabs/talos/pkg/machinery/api/machine"
-@@ -111,6 +112,7 @@ func handle(ctx context.Context, err error) {
+@@ -101,16 +103,19 @@ func syncNonVolatileStorageBuffers() {
+ //nolint:gocyclo
+ func handle(ctx context.Context, err error) {
+ 	rebootCmd := int(emergency.RebootCmd.Load())
++	normalReboot := false
+ 
+ 	if rebootErr, ok := errors.AsType[runtime.RebootError](err); ok {
+ 		// not a failure, but wrapped reboot command
+ 		rebootCmd = rebootErr.Cmd
++		normalReboot = true
+ 
+ 		err = nil
+ 	}
  
  	if err != nil {
  		log.Print(err)
@@ -286,6 +310,15 @@ index f4337a1..418f89f 100644
  		revertBootloader(ctx)
  
  		if p := procfs.ProcCmdline().Get(constants.KernelParamPanic).First(); p != nil {
+@@ -145,7 +150,7 @@ func handle(ctx context.Context, err error) {
+ 		signal.Notify(exitSignal, syscall.SIGINT, syscall.SIGTERM)
+ 
+ 		<-exitSignal
+-	} else if unix.Reboot(rebootCmd) == nil {
++	} else if rpi5.Restart(rebootCmd, normalReboot) == nil {
+ 		// Wait forever.
+ 		select {}
+ 	}
 diff --git a/internal/app/machined/pkg/controllers/network/link_status.go b/internal/app/machined/pkg/controllers/network/link_status.go
 index 1a820c0..f6f2f86 100644
 --- a/internal/app/machined/pkg/controllers/network/link_status.go
@@ -1544,6 +1577,73 @@ index 0000000..67b5511
 +		assert.Equal(t, int32(-70), spec.SignalDBM)
 +	})
 +}
+diff --git a/internal/app/machined/pkg/controllers/runtime/drop_upgrade_fallback.go b/internal/app/machined/pkg/controllers/runtime/drop_upgrade_fallback.go
+index 23bef86..714f5a1 100644
+--- a/internal/app/machined/pkg/controllers/runtime/drop_upgrade_fallback.go
++++ b/internal/app/machined/pkg/controllers/runtime/drop_upgrade_fallback.go
+@@ -15,7 +15,9 @@ import (
+ 	"go.uber.org/zap"
+ 
+ 	machineruntime "github.com/siderolabs/talos/internal/app/machined/pkg/runtime"
++	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5"
+ 	"github.com/siderolabs/talos/pkg/machinery/meta"
++	"github.com/siderolabs/talos/pkg/machinery/resources/block"
+ 	"github.com/siderolabs/talos/pkg/machinery/resources/runtime"
+ )
+ 
+@@ -37,6 +39,7 @@ func (ctrl *DropUpgradeFallbackController) Name() string {
+ // Inputs implements controller.Controller interface.
+ func (ctrl *DropUpgradeFallbackController) Inputs() []controller.Input {
+ 	return []controller.Input{
++		{Namespace: block.NamespaceName, Type: block.SystemDiskType, ID: optional.Some(block.SystemDiskID), Kind: controller.InputWeak},
+ 		{
+ 			Namespace: runtime.NamespaceName,
+ 			Type:      runtime.MachineStatusType,
+@@ -75,6 +78,22 @@ func (ctrl *DropUpgradeFallbackController) Run(ctx context.Context, r controller
+ 			continue
+ 		}
+ 
++		if rpi5.Enabled() {
++			disk, e := safe.ReaderGetByID[*block.SystemDisk](ctx, r, block.SystemDiskID)
++			if e != nil {
++				if state.IsNotFoundError(e) {
++					continue
++				}
++				return e
++			}
++			if disk == nil {
++				continue
++			}
++			if e = rpi5.ConfirmBoot(disk.TypedSpec().DevPath); e != nil {
++				return e
++			}
++			logger.Info("Pi boot slot confirmed; boot watchdog disarmed")
++		}
+ 		ok, err := ctrl.MetaProvider.Meta().DeleteTag(ctx, meta.Upgrade)
+ 		if err != nil {
+ 			return err
+diff --git a/internal/app/machined/pkg/controllers/runtime/watchdog_timer.go b/internal/app/machined/pkg/controllers/runtime/watchdog_timer.go
+index ed2858b..74c2f20 100644
+--- a/internal/app/machined/pkg/controllers/runtime/watchdog_timer.go
++++ b/internal/app/machined/pkg/controllers/runtime/watchdog_timer.go
+@@ -19,6 +19,7 @@ import (
+ 	"go.uber.org/zap"
+ 	"golang.org/x/sys/unix"
+ 
++	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5"
+ 	"github.com/siderolabs/talos/pkg/machinery/resources/runtime"
+ )
+ 
+@@ -55,6 +56,9 @@ func (ctrl *WatchdogTimerController) Outputs() []controller.Output {
+ //
+ //nolint:gocyclo,cyclop
+ func (ctrl *WatchdogTimerController) Run(ctx context.Context, r controller.Runtime, logger *zap.Logger) error {
++	if err := rpi5.AwaitConfirmation(ctx); err != nil {
++		return err
++	}
+ 	var (
+ 		ticker  *time.Ticker
+ 		tickerC <-chan time.Time
 diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/bootloader.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/bootloader.go
 index 39f79ec..418dee4 100644
 --- a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/bootloader.go
@@ -1582,10 +1682,10 @@ index 39f79ec..418dee4 100644
  	}
 diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5.go
 new file mode 100644
-index 0000000..1368140
+index 0000000..5629a45
 --- /dev/null
 +++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5.go
-@@ -0,0 +1,209 @@
+@@ -0,0 +1,206 @@
 +// This Source Code Form is subject to the terms of the Mozilla Public
 +// License, v. 2.0. If a copy of the MPL was not distributed with this
 +// file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1598,6 +1698,7 @@ index 0000000..1368140
 +	"errors"
 +	"fmt"
 +	"io"
++	"log"
 +	"os"
 +	"path/filepath"
 +	"strings"
@@ -1621,15 +1722,14 @@ index 0000000..1368140
 +	bootConfig  = "arm_64bit=1\narm_boost=1\ngpu_mem=32\nauto_initramfs=0\nenable_uart=0\nusb_max_current_enable=1\nkernel=Image\ninitramfs initramfs.xz followkernel\ncmdline=cmdline.txt\ndevice_tree=bcm2712d0-rpi-5-b.dtb\noverlay_prefix=overlays/\ndtoverlay=disable-v3d\n"
 +)
 +
-+// Bootloader supports initial installation. Upgrade/rollback require a separately
-+// tested Pi firmware A/B design and deliberately fail rather than pretending to
-+// provide GRUB's rollback semantics.
++// Bootloader manages firmware one-shot trials of two complete boot-image slots.
 +type Bootloader struct {
 +	AssetsDir string
++	Layout    string
 +}
 +
 +// New returns a bootloader for the dedicated installer image.
-+func New() *Bootloader { return &Bootloader{AssetsDir: AssetsPath} }
++func New() *Bootloader { return &Bootloader{AssetsDir: AssetsPath, Layout: abMarkerValue} }
 +
 +// InstallerPresent identifies the dedicated image without changing other installers.
 +func InstallerPresent() bool {
@@ -1723,7 +1823,7 @@ index 0000000..1368140
 +	}
 +	args := []string{}
 +	for _, arg := range strings.Fields(opts.Cmdline) {
-+		if strings.HasPrefix(arg, "talos.rpi5.") || strings.HasPrefix(arg, "net.ifnames=") || strings.HasPrefix(arg, "console=") || strings.HasPrefix(arg, "sysctl.kernel.kexec_load_disabled=") {
++		if strings.HasPrefix(arg, "watchdog.open_timeout=") || strings.HasPrefix(arg, "panic=") || strings.HasPrefix(arg, "talos.rpi5.") || strings.HasPrefix(arg, "net.ifnames=") || strings.HasPrefix(arg, "console=") || strings.HasPrefix(arg, "sysctl.kernel.kexec_load_disabled=") {
 +			continue
 +		}
 +		args = append(args, arg)
@@ -1746,7 +1846,7 @@ index 0000000..1368140
 +	target := filepath.Join(opts.MountPrefix, constants.EFIMountPoint)
 +	err := mount.PartitionOp(opts.BootDisk, []mount.Spec{{
 +		PartitionLabel: constants.EFIPartitionLabel, FilesystemType: partition.FilesystemTypeVFAT, MountTarget: target,
-+	}}, func() error { return b.writeAssets(target, opts) }, []blkid.ProbeOption{blkid.WithSkipLocking(true)}, nil, nil, opts.BlkidInfo)
++	}}, func() error { return b.installSlots(target, opts) }, []blkid.ProbeOption{blkid.WithSkipLocking(true)}, nil, nil, opts.BlkidInfo)
 +	if err != nil {
 +		return nil, err
 +	}
@@ -1755,7 +1855,7 @@ index 0000000..1368140
 +
 +// Probe recognizes only an installation with our exact format marker.
 +func Probe(disk string, opts options.ProbeOptions) (*Bootloader, error) {
-+	var found bool
++	var layout string
 +	err := mount.PartitionOp(disk, []mount.Spec{{
 +		PartitionLabel: constants.EFIPartitionLabel, FilesystemType: partition.FilesystemTypeVFAT, MountTarget: constants.EFIMountPoint,
 +	}}, func() error {
@@ -1766,7 +1866,9 @@ index 0000000..1368140
 +		if err != nil {
 +			return err
 +		}
-+		found = string(data) == markerValue
++		if string(data) == markerValue || string(data) == abMarkerValue {
++			layout = string(data)
++		}
 +		return nil
 +	}, opts.BlockProbeOptions, []mountv3.ManagerOption{mountv3.WithSkipIfMounted(), mountv3.WithReadOnly()}, nil, nil)
 +	if xerrors.TagIs[mount.NotFoundTag](err) {
@@ -1775,32 +1877,27 @@ index 0000000..1368140
 +	if err != nil {
 +		return nil, err
 +	}
-+	if !found {
++	if layout == "" {
 +		return nil, nil
 +	}
-+	return New(), nil
++	b := New()
++	b.Layout = layout
++	return b, nil
 +}
 +
-+// Upgrade refuses updates until Pi firmware rollback has been implemented and tested.
-+func (b *Bootloader) Upgrade(options.InstallOptions) (*options.InstallResult, error) {
-+	return nil, errors.New("Pi 5 direct boot upgrades are not supported yet")
-+}
-+
-+// Revert cannot emulate an A/B bootloader on an initial-install-only layout.
-+func (b *Bootloader) Revert(string) error {
-+	return errors.New("Pi 5 direct boot rollback is not supported yet")
-+}
-+
-+// KexecLoad is disabled because the Pi firmware must initialize the hardware.
++// KexecLoad deliberately leaves the machine unprepared for kexec. Returning an
++// error here would abort the default reboot/rollback sequence after services
++// have stopped, before it can reach the required firmware reboot.
 +func (b *Bootloader) KexecLoad(runtime.Runtime, string) error {
-+	return errors.New("Pi 5 direct boot requires a firmware reboot")
++	log.Print("kexec skipped: Pi 5 requires a firmware reboot")
++	return nil
 +}
 diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5_test.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5_test.go
 new file mode 100644
-index 0000000..a41b312
+index 0000000..ba4efeb
 --- /dev/null
 +++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5_test.go
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,98 @@
 +// This Source Code Form is subject to the terms of the Mozilla Public
 +// License, v. 2.0. If a copy of the MPL was not distributed with this
 +// file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1818,6 +1915,13 @@ index 0000000..a41b312
 +	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/options"
 +	"github.com/siderolabs/talos/internal/pkg/partition"
 +)
++
++func TestKexecSkipsWithoutAbortingFirmwareReboot(t *testing.T) {
++	// A nil runtime is intentional: skipping kexec must not touch the machine
++	// state or mark a kexec image prepared. The sequencer must receive success
++	// so its following Reboot task can arm tryboot and restart via firmware.
++	require.NoError(t, New().KexecLoad(nil, "/dev/unused"))
++}
 +
 +func fixture(t *testing.T) (*Bootloader, options.InstallOptions) {
 +	t.Helper()
@@ -1892,6 +1996,725 @@ index 0000000..a41b312
 +		require.Equal(t, src, copied)
 +	}
 +}
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/runtime.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/runtime.go
+new file mode 100644
+index 0000000..5d1accc
+--- /dev/null
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/runtime.go
+@@ -0,0 +1,160 @@
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this
++// file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++package rpi5
++
++import (
++	"context"
++	"encoding/binary"
++	"errors"
++	"fmt"
++	"os"
++	"runtime"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"unsafe"
++
++	"github.com/siderolabs/talos/pkg/machinery/constants"
++	"golang.org/x/sys/unix"
++)
++
++var trybootRequested atomic.Bool
++var confirmed = make(chan struct{})
++var confirmOnce sync.Once
++
++// AwaitConfirmation reserves the boot watchdog until the trial is committed.
++func AwaitConfirmation(ctx context.Context) error {
++	if !Enabled() {
++		return nil
++	}
++	trial, err := isTrial()
++	if err != nil {
++		return err
++	}
++	if !trial {
++		return nil
++	}
++	select {
++	case <-confirmed:
++		return nil
++	case <-ctx.Done():
++		return ctx.Err()
++	}
++}
++
++func cmdlineValue(key string) string {
++	data, err := os.ReadFile("/proc/cmdline")
++	if err != nil {
++		return ""
++	}
++	for _, arg := range strings.Fields(string(data)) {
++		if v, ok := strings.CutPrefix(arg, key+"="); ok {
++			return v
++		}
++	}
++	return ""
++}
++
++// Enabled identifies the running OS, not just an installer carrying new code.
++func Enabled() bool { return cmdlineValue("talos.rpi5.ab") == "1" }
++
++// RunningSlot identifies the image the firmware actually loaded.
++func RunningSlot() string { return cmdlineValue("talos.rpi5.slot") }
++func isTrial() (bool, error) {
++	data, err := os.ReadFile("/proc/device-tree/chosen/bootloader/tryboot")
++	if err != nil {
++		return false, err
++	}
++	if len(data) != 4 {
++		return false, errors.New("invalid firmware tryboot property")
++	}
++	return binary.BigEndian.Uint32(data) == 1, nil
++}
++
++// PrepareReboot only arms a staged image different from the running image. A
++// failed candidate must always use a normal reboot and the untouched fallback.
++func PrepareReboot(disk string) error {
++	trybootRequested.Store(false)
++	if !Enabled() {
++		return nil
++	}
++	return partitionOp(disk, constants.EFIMountPoint, func() error {
++		p, err := readPending(constants.EFIMountPoint)
++		if err != nil {
++			return err
++		}
++		if p == nil || p.Slot == RunningSlot() {
++			return nil
++		}
++		active, err := activeSlot(constants.EFIMountPoint)
++		if err != nil {
++			return err
++		}
++		if active != RunningSlot() || p.Previous != active {
++			return errors.New("cannot arm mismatched Pi trial")
++		}
++		if err = verifySlot(constants.EFIMountPoint, p.Slot); err != nil {
++			return err
++		}
++		cfg, err := os.ReadFile(constants.EFIMountPoint + "/tryboot.txt")
++		if err != nil {
++			return err
++		}
++		if string(cfg) != string(configFor(p.Slot, true)) {
++			return errors.New("invalid tryboot configuration")
++		}
++		trybootRequested.Store(true)
++		return nil
++	}, nil)
++}
++
++// Restart performs the firmware reboot after Talos has flushed and unmounted.
++func Restart(cmd int, normal bool) error {
++	if cmd != unix.LINUX_REBOOT_CMD_RESTART || !normal || !trybootRequested.Load() {
++		return unix.Reboot(cmd)
++	}
++	arg, err := unix.BytePtrFromString("0 tryboot")
++	if err != nil {
++		return err
++	}
++	_, _, errno := unix.Syscall6(unix.SYS_REBOOT, unix.LINUX_REBOOT_MAGIC1, unix.LINUX_REBOOT_MAGIC2, unix.LINUX_REBOOT_CMD_RESTART2, uintptr(unsafe.Pointer(arg)), 0, 0)
++	runtime.KeepAlive(arg)
++	if errno != 0 {
++		return errno
++	}
++	return nil
++}
++
++// ConfirmBoot is called only after Talos is running and Ready, including time,
++// network, services, static control-plane pods and Kubernetes node readiness.
++func ConfirmBoot(disk string) error {
++	if !Enabled() {
++		return nil
++	}
++	trial, err := isTrial()
++	if err != nil {
++		return err
++	}
++	if err = partitionOp(disk, constants.EFIMountPoint, func() error { return finishBoot(constants.EFIMountPoint, RunningSlot(), trial) }, nil); err != nil {
++		return err
++	}
++	if !trial {
++		return nil
++	}
++	// The firmware starts the watchdog; the kernel feeds it for at most
++	// watchdog.open_timeout=600 seconds. Do not open/feed it during boot: a hung
++	// or unhealthy OS must time out even if machined never starts. Disarm only
++	// after the committed config is durable. No other service may own this device.
++	wd, err := os.OpenFile("/dev/watchdog0", os.O_WRONLY, 0)
++	if err != nil {
++		return fmt.Errorf("opening boot watchdog: %w", err)
++	}
++	_, err = wd.WriteString("V")
++	if err = errors.Join(err, wd.Close()); err != nil {
++		return err
++	}
++	confirmOnce.Do(func() { close(confirmed) })
++	return nil
++}
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/slots.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/slots.go
+new file mode 100644
+index 0000000..e1cc0f2
+--- /dev/null
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/slots.go
+@@ -0,0 +1,364 @@
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this
++// file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++package rpi5
++
++import (
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"os"
++	"path/filepath"
++	"strings"
++
++	"github.com/siderolabs/go-blockdevice/v2/blkid"
++	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/mount"
++	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/options"
++	"github.com/siderolabs/talos/internal/pkg/partition"
++	"github.com/siderolabs/talos/pkg/machinery/constants"
++)
++
++const abMarkerValue = "raspberrypi5-d0-tryboot-v2\n"
++const pendingName = "talos-pending.json"
++
++var slotAssets = []string{"Image", "initramfs.xz", "bcm2712d0-rpi-5-b.dtb", "overlays/disable-v3d.dtbo", "cmdline.txt"}
++
++type pending struct {
++	Slot     string `json:"slot"`
++	Previous string `json:"previous"`
++}
++
++func validSlot(s string) bool           { return s == "A" || s == "B" }
++func slotPath(root, slot string) string { return filepath.Join(root, "talos", slot) }
++
++// atomicWrite persists contents before changing the directory entry. The two
++// image slots still share FAT metadata; this cannot protect against media damage.
++func atomicWrite(path string, data []byte) error {
++	f, err := os.CreateTemp(filepath.Dir(path), ".talos-write-")
++	if err != nil {
++		return err
++	}
++	name := f.Name()
++	defer os.Remove(name) //nolint:errcheck
++	_, we := f.Write(data)
++	se := f.Sync()
++	ce := f.Close()
++	if err = errors.Join(we, se, ce); err != nil {
++		return err
++	}
++	if err = os.Rename(name, path); err != nil {
++		return err
++	}
++	d, err := os.Open(filepath.Dir(path))
++	if err != nil {
++		return err
++	}
++	defer d.Close() //nolint:errcheck
++	return d.Sync()
++}
++
++func removeSynced(path string) error {
++	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
++		return err
++	}
++	d, err := os.Open(filepath.Dir(path))
++	if err != nil {
++		return err
++	}
++	defer d.Close() //nolint:errcheck
++	return d.Sync()
++}
++
++func configFor(slot string, trial bool) []byte {
++	prefix := "talos/" + slot + "/"
++	cfg := bootConfig
++	for _, pair := range [][2]string{{"kernel=Image", "kernel=" + prefix + "Image"}, {"initramfs initramfs.xz", "initramfs " + prefix + "initramfs.xz"}, {"cmdline=cmdline.txt", "cmdline=" + prefix + "cmdline.txt"}, {"device_tree=bcm2712d0-rpi-5-b.dtb", "device_tree=" + prefix + "bcm2712d0-rpi-5-b.dtb"}, {"overlay_prefix=overlays/", "overlay_prefix=" + prefix + "overlays/"}} {
++		cfg = strings.ReplaceAll(cfg, pair[0], pair[1])
++	}
++	if trial {
++		cfg += "kernel_watchdog_timeout=600\nkernel_watchdog_partition=0\n"
++	}
++	return []byte(cfg)
++}
++
++func configSlot(data []byte) (string, error) {
++	for _, s := range []string{"A", "B"} {
++		if string(data) == string(configFor(s, false)) {
++			return s, nil
++		}
++	}
++	return "", errors.New("unrecognized Pi A/B config; refusing to overwrite manual firmware settings")
++}
++func activeSlot(root string) (string, error) {
++	data, err := os.ReadFile(filepath.Join(root, "config.txt"))
++	if err != nil {
++		return "", err
++	}
++	return configSlot(data)
++}
++func readPending(root string) (*pending, error) {
++	data, err := os.ReadFile(filepath.Join(root, pendingName))
++	if errors.Is(err, os.ErrNotExist) {
++		return nil, nil
++	}
++	if err != nil {
++		return nil, err
++	}
++	var p pending
++	if err = json.Unmarshal(data, &p); err != nil {
++		return nil, err
++	}
++	if !validSlot(p.Slot) || !validSlot(p.Previous) || p.Slot == p.Previous {
++		return nil, errors.New("invalid Pi trial metadata")
++	}
++	return &p, nil
++}
++func hashFile(path string) (string, error) {
++	f, err := os.Open(path)
++	if err != nil {
++		return "", err
++	}
++	defer f.Close()
++	h := sha256.New()
++	if _, err = io.Copy(h, f); err != nil {
++		return "", err
++	}
++	return hex.EncodeToString(h.Sum(nil)), nil
++}
++func writeManifest(root string) error {
++	m := map[string]string{}
++	for _, name := range slotAssets {
++		h, err := hashFile(filepath.Join(root, name))
++		if err != nil {
++			return err
++		}
++		m[name] = h
++	}
++	data, err := json.Marshal(m)
++	if err != nil {
++		return err
++	}
++	return atomicWrite(filepath.Join(root, "manifest.json"), data)
++}
++func verifySlot(root, slot string) error {
++	if !validSlot(slot) {
++		return errors.New("invalid slot")
++	}
++	dir := slotPath(root, slot)
++	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
++	if err != nil {
++		return err
++	}
++	var m map[string]string
++	if err = json.Unmarshal(data, &m); err != nil {
++		return err
++	}
++	if len(m) != len(slotAssets) {
++		return errors.New("incomplete slot manifest")
++	}
++	for _, name := range slotAssets {
++		h, err := hashFile(filepath.Join(dir, name))
++		if err != nil {
++			return err
++		}
++		if h != m[name] {
++			return fmt.Errorf("slot %s checksum mismatch: %s", slot, name)
++		}
++	}
++	return nil
++}
++func (b *Bootloader) writeSlot(root, slot string, opts options.InstallOptions) error {
++	dir := slotPath(root, slot)
++	if err := os.MkdirAll(filepath.Dir(dir), 0755); err != nil {
++		return err
++	}
++	// This slot is never the committed or running one. A failed write leaves the
++	// current slot and config.txt untouched; no partial slot is made pending.
++	if err := os.RemoveAll(dir); err != nil {
++		return err
++	}
++	if err := b.writeAssets(dir, opts); err != nil {
++		return err
++	}
++	data, err := os.ReadFile(filepath.Join(dir, "cmdline.txt"))
++	if err != nil {
++		return err
++	}
++	args := strings.Fields(string(data))
++	args = append(args, "talos.rpi5.ab=1", "talos.rpi5.slot="+slot, "watchdog.open_timeout=600", "panic=10")
++	if err = atomicWrite(filepath.Join(dir, "cmdline.txt"), []byte(strings.Join(args, " ")+"\n")); err != nil {
++		return err
++	}
++	if err = writeManifest(dir); err != nil {
++		return err
++	}
++	return verifySlot(root, slot)
++}
++func (b *Bootloader) installSlots(root string, opts options.InstallOptions) error {
++	if err := b.writeSlot(root, "A", opts); err != nil {
++		return err
++	}
++	if err := atomicWrite(filepath.Join(root, markerName), []byte(abMarkerValue)); err != nil {
++		return err
++	}
++	return atomicWrite(filepath.Join(root, "config.txt"), configFor("A", false))
++}
++
++// CheckUpgrade is called before the installer performs any disk operations.
++func (b *Bootloader) CheckUpgrade() error {
++	if b.Layout != abMarkerValue {
++		return errors.New("legacy Pi boot layout requires the documented one-time A/B migration; refusing before disk changes")
++	}
++	if !Enabled() {
++		return errors.New("running OS lacks Pi A/B upgrade support; refusing before disk changes")
++	}
++	return nil
++}
++func stage(root, next, current string) error {
++	if err := verifySlot(root, next); err != nil {
++		return err
++	}
++	if err := atomicWrite(filepath.Join(root, "tryboot.txt"), configFor(next, true)); err != nil {
++		return err
++	}
++	data, err := json.Marshal(pending{Slot: next, Previous: current})
++	if err != nil {
++		return err
++	}
++	return atomicWrite(filepath.Join(root, pendingName), data)
++}
++func (b *Bootloader) upgradeSlots(root string, opts options.InstallOptions, running string) (string, error) {
++	if err := b.validateAssets(opts); err != nil {
++		return "", err
++	}
++	current, err := activeSlot(root)
++	if err != nil {
++		return "", err
++	}
++	if running != current {
++		return "", errors.New("cannot upgrade an uncommitted or mismatched running slot")
++	}
++	p, err := readPending(root)
++	if err != nil {
++		return "", err
++	}
++	if p != nil {
++		return "", errors.New("a Pi boot trial is already pending")
++	}
++	if err = verifySlot(root, current); err != nil {
++		return "", err
++	}
++	next := "A"
++	if current == "A" {
++		next = "B"
++	}
++	// A two-slot update consumes the older rollback slot. Never leave a rollback
++	// selector pointing at files that are about to be replaced.
++	if err = removeSynced(filepath.Join(root, "previous.txt")); err != nil {
++		return "", err
++	}
++	if err = b.writeSlot(root, next, opts); err != nil {
++		return "", err
++	}
++	if opts.ExtraInstallStep != nil {
++		if err = opts.ExtraInstallStep(); err != nil {
++			return "", err
++		}
++	}
++	if err = stage(root, next, current); err != nil {
++		return "", err
++	}
++	return current, nil
++}
++func partitionOp(disk, target string, op func() error, info *blkid.Info) error {
++	return mount.PartitionOp(disk, []mount.Spec{{PartitionLabel: constants.EFIPartitionLabel, FilesystemType: partition.FilesystemTypeVFAT, MountTarget: target}}, op, []blkid.ProbeOption{blkid.WithSkipLocking(true)}, nil, nil, info)
++}
++
++// Upgrade stages the inactive slot without changing the normal firmware entry.
++func (b *Bootloader) Upgrade(opts options.InstallOptions) (*options.InstallResult, error) {
++	if err := b.CheckUpgrade(); err != nil {
++		return nil, err
++	}
++	var previous string
++	target := filepath.Join(opts.MountPrefix, constants.EFIMountPoint)
++	err := partitionOp(opts.BootDisk, target, func() error { var e error; previous, e = b.upgradeSlots(target, opts, RunningSlot()); return e }, opts.BlkidInfo)
++	return &options.InstallResult{PreviousLabel: previous}, err
++}
++func clearPending(root string) error {
++	if err := removeSynced(filepath.Join(root, pendingName)); err != nil {
++		return err
++	}
++	return removeSynced(filepath.Join(root, "tryboot.txt"))
++}
++
++// finishBoot handles both successful trials and boots of the untouched fallback.
++// config.txt is authoritative even if power was lost during a previous commit.
++func finishBoot(root, running string, trial bool) error {
++	active, err := activeSlot(root)
++	if err != nil {
++		return err
++	}
++	p, err := readPending(root)
++	if err != nil {
++		return err
++	}
++	if p == nil {
++		if running != active {
++			return errors.New("running slot does not match committed configuration")
++		}
++		return nil
++	}
++	if running == active {
++		return clearPending(root)
++	}
++	if !trial || running != p.Slot || active != p.Previous {
++		return errors.New("boot does not match pending trial")
++	}
++	if err = verifySlot(root, running); err != nil {
++		return err
++	}
++	if err = atomicWrite(filepath.Join(root, "previous.txt"), configFor(active, false)); err != nil {
++		return err
++	}
++	if err = atomicWrite(filepath.Join(root, "config.txt"), configFor(running, false)); err != nil {
++		return err
++	}
++	return clearPending(root)
++}
++func revertSlots(root, running string) error {
++	active, err := activeSlot(root)
++	if err != nil {
++		return err
++	}
++	p, err := readPending(root)
++	if err != nil {
++		return err
++	}
++	if p != nil {
++		return clearPending(root)
++	} // cancel a failed or unbooted candidate
++	data, err := os.ReadFile(filepath.Join(root, "previous.txt"))
++	if err != nil {
++		return fmt.Errorf("no rollback slot: %w", err)
++	}
++	previous, err := configSlot(data)
++	if err != nil {
++		return err
++	}
++	if running != active || previous == active {
++		return errors.New("invalid rollback selection")
++	}
++	return stage(root, previous, active)
++}
++
++// Revert cancels a pending trial, or trials the previous committed image.
++func (b *Bootloader) Revert(disk string) error {
++	if b.Layout != abMarkerValue {
++		return errors.New("legacy Pi layout cannot rollback")
++	}
++	return partitionOp(disk, constants.EFIMountPoint, func() error { return revertSlots(constants.EFIMountPoint, RunningSlot()) }, nil)
++}
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/slots_test.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/slots_test.go
+new file mode 100644
+index 0000000..7d8da53
+--- /dev/null
++++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/slots_test.go
+@@ -0,0 +1,146 @@
++package rpi5
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestTrialCommitAndExplicitRollback(t *testing.T) {
++	b, opts := fixture(t)
++	root := t.TempDir()
++	require.NoError(t, b.installSlots(root, opts))
++	original, err := os.ReadFile(filepath.Join(root, "config.txt"))
++	require.NoError(t, err)
++	previous, err := b.upgradeSlots(root, opts, "A")
++	require.NoError(t, err)
++	require.Equal(t, "A", previous)
++	after, err := os.ReadFile(filepath.Join(root, "config.txt"))
++	require.NoError(t, err)
++	require.Equal(t, original, after)
++	p, err := readPending(root)
++	require.NoError(t, err)
++	require.Equal(t, &pending{Slot: "B", Previous: "A"}, p)
++	require.Error(t, finishBoot(root, "B", false)) // a command-line slot alone cannot authorize promotion
++	require.NoError(t, finishBoot(root, "B", true))
++	active, err := activeSlot(root)
++	require.NoError(t, err)
++	require.Equal(t, "B", active)
++	p, err = readPending(root)
++	require.NoError(t, err)
++	require.Nil(t, p)
++	require.NoError(t, revertSlots(root, "B"))
++	active, err = activeSlot(root)
++	require.NoError(t, err)
++	require.Equal(t, "B", active) // rollback is itself a trial
++	require.NoError(t, finishBoot(root, "A", true))
++	active, err = activeSlot(root)
++	require.NoError(t, err)
++	require.Equal(t, "A", active)
++}
++
++func TestFailedTrialReturnsToUnchangedDefault(t *testing.T) {
++	b, opts := fixture(t)
++	root := t.TempDir()
++	require.NoError(t, b.installSlots(root, opts))
++	_, err := b.upgradeSlots(root, opts, "A")
++	require.NoError(t, err)
++	// Firmware cleared its one-shot bit before booting B. Any reset now boots A.
++	require.NoError(t, finishBoot(root, "A", false))
++	p, err := readPending(root)
++	require.NoError(t, err)
++	require.Nil(t, p)
++	active, err := activeSlot(root)
++	require.NoError(t, err)
++	require.Equal(t, "A", active)
++	require.NoError(t, verifySlot(root, "A"))
++	_, err = b.upgradeSlots(root, opts, "A")
++	require.NoError(t, err)                    // a failed trial does not block future upgrades
++	require.NoError(t, revertSlots(root, "B")) // machined's fatal-error rollback cancels the candidate
++	active, err = activeSlot(root)
++	require.NoError(t, err)
++	require.Equal(t, "A", active)
++}
++
++func TestInterruptedCommitIsRecoverable(t *testing.T) {
++	for _, promoted := range []bool{false, true} {
++		t.Run(map[bool]string{false: "before-config", true: "after-config"}[promoted], func(t *testing.T) {
++			b, opts := fixture(t)
++			root := t.TempDir()
++			require.NoError(t, b.installSlots(root, opts))
++			_, err := b.upgradeSlots(root, opts, "A")
++			require.NoError(t, err)
++			require.NoError(t, atomicWrite(filepath.Join(root, "previous.txt"), configFor("A", false)))
++			running := "A"
++			if promoted {
++				require.NoError(t, atomicWrite(filepath.Join(root, "config.txt"), configFor("B", false)))
++				running = "B"
++			}
++			require.NoError(t, finishBoot(root, running, false))
++			active, err := activeSlot(root)
++			require.NoError(t, err)
++			require.Equal(t, running, active)
++			p, err := readPending(root)
++			require.NoError(t, err)
++			require.Nil(t, p)
++		})
++	}
++}
++
++func TestUnsafeUpgradeLeavesCommittedSlotUntouched(t *testing.T) {
++	b, opts := fixture(t)
++	root := t.TempDir()
++	require.NoError(t, b.installSlots(root, opts))
++	_, err := b.upgradeSlots(root, opts, "B")
++	require.Error(t, err)
++	require.NoError(t, os.WriteFile(filepath.Join(b.AssetsDir, "Image"), []byte("broken"), 0600))
++	_, err = b.upgradeSlots(root, opts, "A")
++	require.Error(t, err)
++	require.NoError(t, verifySlot(root, "A"))
++	active, err := activeSlot(root)
++	require.NoError(t, err)
++	require.Equal(t, "A", active)
++	p, err := readPending(root)
++	require.NoError(t, err)
++	require.Nil(t, p)
++}
++
++func TestCorruptCandidateAndConcurrentUpgradeAreRejected(t *testing.T) {
++	b, opts := fixture(t)
++	root := t.TempDir()
++	require.NoError(t, b.installSlots(root, opts))
++	_, err := b.upgradeSlots(root, opts, "A")
++	require.NoError(t, err)
++	_, err = b.upgradeSlots(root, opts, "A")
++	require.ErrorContains(t, err, "already pending")
++	require.NoError(t, os.WriteFile(filepath.Join(slotPath(root, "B"), "initramfs.xz"), []byte("torn write"), 0600))
++	require.ErrorContains(t, finishBoot(root, "B", true), "checksum mismatch")
++	active, err := activeSlot(root)
++	require.NoError(t, err)
++	require.Equal(t, "A", active)
++	require.NoError(t, verifySlot(root, "A"))
++}
++
++func TestMetadataCannotSelectPathsOutsideSlots(t *testing.T) {
++	_, err := configSlot([]byte("kernel=../Image\n"))
++	require.Error(t, err)
++	root := t.TempDir()
++	require.NoError(t, os.WriteFile(filepath.Join(root, pendingName), []byte(`{"slot":"../../STATE","previous":"A"}`), 0600))
++	_, err = readPending(root)
++	require.Error(t, err)
++}
++
++func TestTrialWatchdogIsNotEnabledOnNormalBoot(t *testing.T) {
++	require.Contains(t, string(configFor("B", true)), "kernel_watchdog_timeout=600")
++	require.NotContains(t, string(configFor("B", false)), "kernel_watchdog_timeout")
++	b, opts := fixture(t)
++	root := t.TempDir()
++	require.NoError(t, b.installSlots(root, opts))
++	data, err := os.ReadFile(filepath.Join(slotPath(root, "A"), "cmdline.txt"))
++	require.NoError(t, err)
++	require.Contains(t, string(data), "watchdog.open_timeout=600")
++	require.Contains(t, string(data), "talos.rpi5.slot=A")
++	require.Contains(t, string(data), "panic=10")
++}
+diff --git a/internal/app/machined/pkg/runtime/v1alpha1/v1alpha1_sequencer_tasks.go b/internal/app/machined/pkg/runtime/v1alpha1/v1alpha1_sequencer_tasks.go
+index ce36259..374413f 100644
+--- a/internal/app/machined/pkg/runtime/v1alpha1/v1alpha1_sequencer_tasks.go
++++ b/internal/app/machined/pkg/runtime/v1alpha1/v1alpha1_sequencer_tasks.go
+@@ -41,6 +41,7 @@ import (
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/emergency"
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader"
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/options"
++	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5"
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/sdboot"
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/platform"
+ 	"github.com/siderolabs/talos/internal/app/machined/pkg/sandboxd"
+@@ -1278,6 +1279,18 @@ func Upgrade(_ runtime.Sequence, data any) (runtime.TaskExecutionFunc, string) {
+ // Reboot represents the Reboot task.
+ func Reboot(runtime.Sequence, any) (runtime.TaskExecutionFunc, string) {
+ 	return func(ctx context.Context, logger *log.Logger, r runtime.Runtime) (err error) {
++		if rpi5.Enabled() {
++			disk, e := blockres.GetSystemDisk(ctx, r.State().V1Alpha2().Resources())
++			if e != nil {
++				return e
++			}
++			if disk == nil {
++				return fmt.Errorf("Pi reboot: system disk not found")
++			}
++			if e = rpi5.PrepareReboot(disk.DevPath); e != nil {
++				return e
++			}
++		}
+ 		rebootCmd := unix.LINUX_REBOOT_CMD_RESTART
+ 
+ 		if r.State().Machine().IsKexecPrepared() {
 diff --git a/internal/app/machined/pkg/runtime/v1alpha2/v1alpha2_controller.go b/internal/app/machined/pkg/runtime/v1alpha2/v1alpha2_controller.go
 index 10defb2..f95f8a3 100644
 --- a/internal/app/machined/pkg/runtime/v1alpha2/v1alpha2_controller.go
@@ -1922,7 +2745,7 @@ index 2009dbe..15bc9d2 100644
  		&perf.Memory{},
  		&cri.BaseRuntimeSpecConfig{},
 diff --git a/internal/app/machined/pkg/system/services/udevd.go b/internal/app/machined/pkg/system/services/udevd.go
-index 242c7f8..b6e5dec 100644
+index 242c7f8..a1a5c7c 100644
 --- a/internal/app/machined/pkg/system/services/udevd.go
 +++ b/internal/app/machined/pkg/system/services/udevd.go
 @@ -5,10 +5,13 @@
@@ -1939,7 +2762,7 @@ index 242c7f8..b6e5dec 100644
  	"github.com/siderolabs/go-cmd/pkg/cmd"
  
  	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime"
-@@ -40,6 +43,20 @@ func (c *Udevd) ID(runtime.Runtime) string {
+@@ -40,6 +43,25 @@ func (c *Udevd) ID(runtime.Runtime) string {
  
  // PreFunc implements the Service interface.
  func (c *Udevd) PreFunc(ctx context.Context, r runtime.Runtime) error {
@@ -1950,10 +2773,15 @@ index 242c7f8..b6e5dec 100644
 +	if bytes.Contains(compatible, []byte("raspberrypi,5-model-b\x00")) {
 +		manager, err := kmod.New()
 +		if err != nil {
-+			return fmt.Errorf("initialize Pi Wi-Fi modules: %w", err)
++			return fmt.Errorf("initialize Pi boot modules: %w", err)
 +		}
-+		if err := manager.Load("brcmfmac-wcc", "", 0); err != nil {
-+			return fmt.Errorf("preload Pi Wi-Fi firmware vendor: %w", err)
++		// USB SSDs hold STATE, including Wi-Fi configuration. Load their host and
++		// storage drivers before coldplug, without depending on diagnostic-mode
++		// module loading or asynchronous discovery order to make STATE available.
++		for _, name := range []string{"brcmfmac-wcc", "xhci-hcd", "xhci-pci", "xhci-plat-hcd", "usb-storage", "uas"} {
++			if err := manager.Load(name, "", 0); err != nil {
++				return fmt.Errorf("preload Pi boot module %s: %w", name, err)
++			}
 +		}
 +	}
 +

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import runpy
+import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,6 +20,31 @@ def load(name):
 
 
 class BuildInputs(unittest.TestCase):
+    def test_hang_fixture_preserves_header_and_refuses_overwrite(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            kernel = root / 'Image'
+            original = bytearray(128)
+            original[56:60] = b'ARM\x64'
+            struct.pack_into('<Q', original, 8, 0x80000)
+            kernel.write_bytes(original)
+            output = root / 'fixture'
+            fixture = load('make-hang-fixture')
+            fixture.make_fixture(kernel, output)
+            data = (output / 'hang-Image').read_bytes()
+            self.assertEqual(len(data), len(original))
+            self.assertEqual(struct.unpack_from('<I', data, 4)[0], 0x14000000)
+            self.assertEqual(data[:4], original[:4])
+            self.assertEqual(data[8:], original[8:])
+            self.assertEqual(kernel.read_bytes(), original)
+            with self.assertRaises(FileExistsError):
+                fixture.make_fixture(kernel, output)
+            self.assertEqual((output / 'hang-Image').read_bytes(), data)
+            kernel.write_bytes(b'not an ARM64 Image')
+            with self.assertRaises(ValueError):
+                fixture.make_fixture(kernel, root / 'invalid')
+            self.assertFalse((root / 'invalid').exists())
+
     def test_versions_keep_upstream_identity(self):
         build = load('build')
         self.assertEqual(build.validate_version('v1.14.2-pi5.1'), 'v1.14.2-pi5.1')

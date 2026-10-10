@@ -58,7 +58,9 @@ Before publishing a release:
   public rootfs and no private data in the release directory.
 - Run `scripts/test-installer.sh` on the Linux builder with the public installer.
   It creates its own disposable loop device, installs into that, checks boot
-  assets, and verifies that an upgrade fails before changing any disk byte.
+  assets, stages an A/B upgrade without changing the active slot or cluster-data
+  partitions, and verifies that pending-trial and legacy-layout upgrades are
+  rejected before changing any disk byte.
 - Test private tryboot and recovery to Pi OS before erasing a disk.
 - Test the **public installed initramfs** loading Wi-Fi config from STATE, both
   warm and cold boot. Isolate any requirement for early USB diagnostics.
@@ -132,3 +134,118 @@ not a Talos API upgrade. Diagnostic early USB loading remained enabled. A fresh
 stable installation without that setting, automatic rollback, and long-term
 Wi-Fi reliability still need separate hardware validation. Build metadata retains
 `hardware_validated: false` because the full release qualification is incomplete.
+
+## A/B upgrade implementation
+
+The `pi5.3` and `pi5.4` local builds use project commit `22324ce` and the same
+upstream Talos/kernel versions as `pi5.2`. They add the Pi firmware tryboot reboot
+handler, two boot slots, readiness-gated confirmation and watchdog fallback.
+
+Local validation on 2026-10-10 passed:
+
+- Complete source preparation, Python tests, Wi-Fi tests and image-content guards.
+- Boot-slot unit tests, including interrupted confirmation, failed trials,
+  explicit rollback, corrupted assets and invalid metadata.
+- Existing upgrade-fallback, runtime-watchdog and sequencer tests.
+- Full kernel, machine daemon, public installer/initramfs and both client builds.
+- Disposable-disk integration for both final installers: initial install, staged
+  upgrade, unchanged active assets/GPT/seeded STATE and EPHEMERAL, and byte-for-byte
+  refusal of pending-trial and legacy-layout upgrades.
+
+The existing physical Pi was migrated to slot A on `pi5.3` using an EFI-only file
+update after off-device backups. It returned over Wi-Fi through a Talos software
+reboot, retained its Kubernetes node UID, and passed all Talos health checks.
+This bootstrap slot retains the diagnostic early USB-loading setting.
+
+A standard `talosctl upgrade --reboot-mode=powercycle --drain=false` then installed
+`pi5.4` in slot B. Hardware evidence confirmed a new boot ID, firmware tryboot=1,
+and the public command line without diagnostic USB loading. All Talos health
+checks and the DNS/HTTP smoke Job passed. Read-only EFI inspection confirmed
+`config.txt` selected B, `previous.txt` selected A and pending/tryboot files were
+removed. The node UID remained unchanged.
+
+The subsequent explicit rollback did not return online. Source inspection found
+that the Pi's kexec hook returned an error, which aborts the default reboot path
+before the firmware reboot task. Revision `pi5.5` changes that hook to a successful
+no-op and adds a regression test. A cold power cycle recovered the committed
+`pi5.4` slot; this recovery was manual, not a watchdog-fallback result.
+
+The first public `pi5.5` trial failed to become reachable. After the ten-minute
+startup deadline, the Pi automatically returned to committed `pi5.4` without
+physical intervention. Firmware boot count increased from 1 to 3, reset status
+changed to `0x20`, and the fallback reported tryboot=0. All Talos health checks
+passed. EFI inspection confirmed B remained selected, pending/tryboot metadata
+was cleared, and the candidate assets still matched their manifest. The CLI
+upgrade wait returned success despite fallback, so verify the running server
+version separately. A retry of the same `pi5.5` assets with diagnostic early USB loading enabled
+booted slot A successfully, passed all health checks and committed A with B as
+its previous slot. Plain `talosctl rollback` then returned to `pi5.4` in slot B
+with tryboot=1, passed all health checks, committed B, and retained A as the
+previous slot. This validates the corrected default reboot path, but does not
+qualify the unmodified `pi5.5` boot path.
+
+Revision `pi5.6`, built from clean project commit `12de789`, preloads Pi USB host
+and storage modules in the existing Pi-specific udev startup hook. This is a
+focused mitigation for the apparent boot-order dependency; the failed `pi5.5`
+trial did not provide logs proving its precise cause. Its full local release and
+disposable-disk checks passed. A normal `talosctl upgrade --namespace cri` then
+booted the public `pi5.6` image in slot A without diagnostic flags. Firmware
+reported tryboot=1, all health checks passed, and EFI inspection confirmed A was
+committed with B as the previous slot and no pending/tryboot metadata remaining.
+The original Kubernetes node UID has remained unchanged through completed tests.
+The first synthetic pre-Linux hang fixture used a truncated 4 KiB ARM64 image.
+It did not return online within fifteen minutes of losing API access, so this
+is **not** a successful early-kernel watchdog test. A firmware rejection before
+kernel handoff is one possible explanation, not a confirmed cause. Recovery via
+a cold power cycle also failed to restore observed network access. Read-only SSD
+inspection found a clean FAT filesystem, the healthy A selector and assets intact,
+and pending/tryboot files already absent. Their absence suggests the OS cleared
+the trial at some point, but neither the timing nor the connectivity failure is
+established. Enabling existing boot diagnostics restored access; this changes
+early USB initialization, so it does not isolate the cause.
+
+On 2026-10-10, a repeat native upgrade with the **default reboot mode** installed
+public `pi5.6` in B without diagnostic flags. Firmware reported tryboot=1 and
+boot count 2. All health checks and DNS/HTTP smoke tests passed. EFI inspection
+confirmed B was committed, A was retained as the previous slot, and pending
+metadata was cleared.
+
+The revised failure fixture preserves the entire 65,169,920-byte kernel image,
+including its header, and changes only the ARM64 entry branch at offset 4 to
+`B .`. Its installed kernel SHA256 was
+`4f7ff2df3954e88358b0ca7318db5a1e9e098df0a192cd7d43a3949db3cec898`.
+A native upgrade staged this deliberately hung kernel in A. **Without a manual
+power cycle**, the Pi returned to healthy public B roughly a minute after API
+access disappeared. The boot ID changed, firmware count advanced from 2 to 4,
+tryboot was 0 and reset status was `0x20`. All Talos/Kubernetes health checks
+passed and the original node UID was preserved. Read-only EFI inspection verified
+the exact hung kernel remained in A, healthy B was still selected, and
+pending/tryboot metadata had been removed. This demonstrates automatic watchdog
+fallback after kernel handoff; it does not demonstrate recovery from a firmware
+loader hang before handoff. EEPROM `BOOT_WATCHDOG_TIMEOUT` was not configured or
+validated in this test.
+
+A subsequent native upgrade restored the public image in A. It passed all health
+checks and DNS/HTTP smoke tests. EFI verification found A committed, B retained
+for explicit rollback, both kernels and initramfs files matching the public
+release, and no diagnostic flags or pending trial. The two failure-test images
+and their cache aliases were removed from the node; temporary privileged and
+smoke-test namespaces were deleted. Cluster node identity remained unchanged.
+
+The final physical power cycle also passed with the public image and diagnostics
+disabled. It booted the committed A slot with a new boot ID, firmware count 1
+and tryboot=0. All Talos/Kubernetes health checks and the DNS/HTTP smoke test
+passed; the original node UID was preserved. This validates a cold boot of the
+restored image, but does not explain the earlier connectivity loss or establish
+long-term boot/Wi-Fi reliability.
+
+The exact public `pi5.6` artifacts tested have these SHA256 values:
+
+- Boot bundle: `9de8f4783edd70820768182ffd7662ade50236e930c26553158a36837f95c77d`.
+- Installer OCI archive: `51de1603f482d9cf32dee70ab77fab62b4ff8e81a66e6a83635e7973541778cd`.
+- Local-registry installer manifest: `eb9c581c8c1be75338fd936d32a1906351af1344fec7517df01898831bdbe7fa`.
+- Installed kernel: `e64d3eb7f60d54dd6507b5e7635bda9b575784d11c90f301f2cba324f9341c28`.
+- Installed initramfs: `2d58e49c97408ee04a59e6a0e83e1644f7bb51456eced5b02f446ae59f52ad54`.
+
+The registry manifest digest depends on OCI-to-registry layer representation;
+verify the digest returned by your own registry when publishing the archive.

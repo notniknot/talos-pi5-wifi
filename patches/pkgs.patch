@@ -200,6 +200,87 @@ index b675aad..0229397 100644
  # CONFIG_WAN is not set
  
  #
+diff --git a/kernel/build/patches/0019-rpi-firmware-tryboot-reboot.patch b/kernel/build/patches/0019-rpi-firmware-tryboot-reboot.patch
+new file mode 100644
+index 0000000..c5adac3
+--- /dev/null
++++ b/kernel/build/patches/0019-rpi-firmware-tryboot-reboot.patch
+@@ -0,0 +1,75 @@
++--- a/drivers/firmware/raspberrypi.c
+++++ b/drivers/firmware/raspberrypi.c
++@@ -15,6 +15,7 @@
++ #include <linux/of_platform.h>
++ #include <linux/platform_device.h>
++ #include <linux/slab.h>
+++#include <linux/reboot.h>
++ #include <soc/bcm2835/raspberrypi-firmware.h>
++ 
++ #define MBOX_MSG(chan, data28)		(((data28) & ~0xf) | ((chan) & 0xf))
++@@ -26,6 +27,7 @@
++ static struct platform_device *rpi_clk;
++ 
++ struct rpi_firmware {
+++	struct notifier_block reboot_notifier;
++ 	struct mbox_client cl;
++ 	struct mbox_chan *chan; /* The property channel. */
++ 	struct completion c;
++@@ -180,6 +182,25 @@
++ }
++ EXPORT_SYMBOL_GPL(rpi_firmware_property);
++ 
+++/* Raspberry Pi one-shot boot flag, also used by the downstream Pi kernel. */
+++static int rpi_firmware_reboot_notify(struct notifier_block *nb,
+++                                    unsigned long action, void *data)
+++{
+++	struct rpi_firmware *fw = container_of(nb, struct rpi_firmware,
+++	                                     reboot_notifier);
+++	u32 flags = 1;
+++	int ret;
+++
+++	if (action != SYS_RESTART || !data || strcmp(data, "0 tryboot"))
+++		return NOTIFY_DONE;
+++
+++	ret = rpi_firmware_property(fw, 0x00038064, &flags, sizeof(flags));
+++	if (ret)
+++		pr_err("raspberrypi: failed to arm tryboot: %d\n", ret);
+++
+++	return NOTIFY_DONE;
+++}
+++
++ static void
++ rpi_firmware_print_firmware_revision(struct rpi_firmware *fw)
++ {
++@@ -277,6 +298,7 @@
++ {
++ 	struct device *dev = &pdev->dev;
++ 	struct rpi_firmware *fw;
+++	int ret;
++ 
++ 	/*
++ 	 * Memory will be freed by rpi_firmware_delete() once all users have
++@@ -301,6 +323,13 @@
++ 	kref_init(&fw->consumers);
++ 
++ 	platform_set_drvdata(pdev, fw);
+++	fw->reboot_notifier.notifier_call = rpi_firmware_reboot_notify;
+++	ret = register_reboot_notifier(&fw->reboot_notifier);
+++	if (ret) {
+++		rpi_firmware_put(fw);
+++		return ret;
+++	}
+++
++ 
++ 	rpi_firmware_print_firmware_revision(fw);
++ 	rpi_register_hwmon_driver(dev, fw);
++@@ -322,6 +351,8 @@
++ static void rpi_firmware_remove(struct platform_device *pdev)
++ {
++ 	struct rpi_firmware *fw = platform_get_drvdata(pdev);
+++
+++	unregister_reboot_notifier(&fw->reboot_notifier);
++ 
++ 	platform_device_unregister(rpi_hwmon);
++ 	rpi_hwmon = NULL;
 diff --git a/kernel/build/pkg.yaml b/kernel/build/pkg.yaml
 index 40f25d5..121c5a5 100644
 --- a/kernel/build/pkg.yaml

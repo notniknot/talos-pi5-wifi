@@ -1,7 +1,8 @@
 # One Pi, one control plane
 
 This is a development procedure, not an unattended installer. The stable port
-has not yet passed real-hardware validation. Keep a copy of the existing Pi OS
+has passed the recorded `pi5.2` hardware tests; the new A/B path has a separate
+validation checklist. Keep a copy of the existing Pi OS
 boot partition and a recoverable OS disk or SD card. A USB-C connection to a dock
 powers the Pi; the procedure reaches it over the network, not through USB-C SSH.
 
@@ -113,6 +114,11 @@ DHCP address for the Pi or use an appropriate stable endpoint before relying on 
 The config and kubeconfig generated here are private and are not added to global
 contexts automatically. You can merge them explicitly using `talosctl config
 merge` and your normal kubeconfig workflow after validation.
+
+## Upgrades
+
+See [upgrades and rollback](upgrading.md) for the A/B boot layout, required
+one-time migration from legacy images, and the `talosctl upgrade` workflow.
 
 ## Reset and recovery
 
