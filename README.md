@@ -7,9 +7,11 @@ without Ethernet or a serial debug cable.
 
 **Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.2`.** The original
 v1.15.0-alpha.0 prototype booted on real hardware, ran a single-node cluster,
-and survived reboot and a targeted reset. The stable port passes
-build and disposable-disk installer tests but has **not yet passed hardware validation**. It is not an
-official Sidero Labs image or a production-supported distribution.
+and survived reboot and a targeted reset. Revision `pi5.2` has now passed cold and software-reboot
+checks on that Pi over Wi-Fi, preserved the existing cluster and passed Talos health
+and Kubernetes DNS/HTTP checks. See [validation](docs/validation.md) for the exact
+test scope. This is not an official Sidero Labs image or a production-supported
+distribution.
 
 Revision `pi5.1` omitted Wi-Fi modules from the ARM64 image. Do not deploy it;
 `pi5.2` corrects the packaging and checks the actual image contents during release builds.

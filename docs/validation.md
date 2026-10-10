@@ -46,7 +46,8 @@ Public boot-bundle SHA256:
 Public installer OCI-archive SHA256:
 `67676016bd8e5af84c14ce0f5e51c7e8fafa2e38c4756ae6aa638f8bf9ba72f3`.
 These identify the local validation artifacts; no GitHub image release was
-published. The existing Pi cluster was not modified.
+published. These hashes identify the earlier `pi5.1` build, which subsequently
+failed the hardware Wi-Fi boot test; do not deploy it.
 
 Before publishing a release:
 
@@ -88,4 +89,46 @@ but its rootfs did not. The copy step now runs in the ARM64 stage. The new
 `image-tests` target checks cfg80211, mac80211, brcmfmac and its WCC module, Wi-Fi
 firmware, wpa_supplicant and the regulatory database in the assembled rootfs.
 It reproduced the failure before the fix and passed after the fix. Local release
-builds now require this check. Hardware recovery/validation is in progress.
+builds now require this check.
+
+The corrected local release was built from clean project commit
+`72f4b39c86da153935fb6d0cc22e65c38bba3f0a` and reports `v1.14.2-pi5.2`.
+Its public boot-bundle SHA256 is
+`b27f84e87b5cdbb3abb5a69871837ade9ca7e4fa3784fbce3adc700ac0d2bdeb`;
+its installer OCI-archive SHA256 is
+`ebccf167a87d61ed8820b0851c5fa8968159039585f082860e3573e8ed49695d`.
+
+The corrected installer also passed initial installation into a disposable 8 GiB
+loop disk; its unsupported upgrade path refused before changing any disk byte.
+The five Python script tests passed again.
+
+Hardware validation on 2026-10-10 used the original D0 / 8 GB Pi and USB SATA SSD:
+
+- Backed up etcd, machine configuration and EFI before changing boot files.
+- Recovered through an EFI-only SSD write, verified by full read-back comparison.
+  STATE and the primary partition-table area were byte-identical before/after.
+- Cold-booted the corrected public initramfs with the existing STATE Wi-Fi config.
+  Talos reported `v1.14.2-pi5.2`, kernel `6.18.54-talos`, containerd `2.3.6`;
+  Kubernetes remained `v1.37.1`.
+- Original node and kube-system namespace UIDs were preserved; all Talos health
+  checks passed and the node became Ready.
+- The smoke Job passed internal/external DNS and ClusterIP HTTP checks after
+  initial retries while Kubernetes recovered.
+- A Talos software reboot returned over Wi-Fi without a power cycle. The new
+  boot ID, unchanged node UID and Ready status were verified; all Talos health
+  checks passed again. The DNS/HTTP smoke Job also passed after this reboot,
+  and its temporary namespace was removed.
+- A 30-packet Wi-Fi check had no loss, but latency ranged from 19 to 556 ms.
+  This is a short connectivity check, not a reliability or performance guarantee.
+
+Both cold and warm boots started with the clock at 1970. Before time synchronization, Talos
+rejected and removed the existing kubelet client certificate as not yet valid.
+Automatic certificate renewal and control-plane recovery completed, but added a
+startup delay. This timing issue remains a follow-up; it was not fixed by the
+Wi-Fi packaging correction.
+
+This was a manual EFI replacement with local backups and an old-image fallback,
+not a Talos API upgrade. Diagnostic early USB loading remained enabled. A fresh
+stable installation without that setting, automatic rollback, and long-term
+Wi-Fi reliability still need separate hardware validation. Build metadata retains
+`hardware_validated: false` because the full release qualification is incomplete.
