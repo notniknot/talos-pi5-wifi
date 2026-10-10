@@ -7,8 +7,8 @@ without Ethernet or a serial debug cable.
 
 **Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.1`.** The original
 v1.15.0-alpha.0 prototype booted on real hardware, ran a single-node cluster,
-and survived reboot and a targeted reset. The stable port is still undergoing
-build validation and has **not yet passed hardware validation**. It is not an
+and survived reboot and a targeted reset. The stable port passes
+build and disposable-disk installer tests but has **not yet passed hardware validation**. It is not an
 official Sidero Labs image or a production-supported distribution.
 
 ## What is here

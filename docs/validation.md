@@ -23,8 +23,30 @@ SELinux enforcing mode were not tested; full-disk reset is not supported here.
 
 The v1.14.2 port uses official Talos commit
 `f513c7358cefc69255e29b517ba96c651e0326ad` and kernel `6.18.54-talos`.
-**Prototype evidence does not validate these new binaries.** Build/test results
-are recorded separately below as they become available.
+**Prototype evidence does not validate these new binaries.** Local validation on 2026-10-10 passed for source commit
+`67c8792c2c1931af4472f9412493ce9318acc54e`:
+
+| Check | Result |
+| --- | --- |
+| Complete patches against clean pinned sources; repeated preparation | Passed |
+| Five local Python tests; generated/example config validation | Passed |
+| Wi-Fi controller/config/country-consistency tests | Passed |
+| Direct-boot installer unit tests | Passed |
+| Kernel, full machine daemon, public initramfs and installer builds | Passed |
+| macOS ARM64 and Linux ARM64 custom client builds | Passed |
+| Public rootfs contains no embedded machine config | Passed build guard |
+| Full local release packaging, checksums and custom OCI labels | Passed |
+| Initial install into a disposable 8 GiB loop disk | Passed |
+| Upgrade refusal before changes, verified with whole-disk SHA256 | Passed |
+| Private Wi-Fi maintenance image and diagnostic tryboot bundle build | Passed locally; private artifacts excluded from release |
+| Stable port boot, Wi-Fi and Kubernetes on the physical Pi | **Not yet tested** |
+
+Public boot-bundle SHA256:
+`b94520fb010b598625e773c178b2ae65f14629b5707879f0c136bd66db6fe319`.
+Public installer OCI-archive SHA256:
+`67676016bd8e5af84c14ce0f5e51c7e8fafa2e38c4756ae6aa638f8bf9ba72f3`.
+These identify the local validation artifacts; no GitHub image release was
+published. The existing Pi cluster was not modified.
 
 Before publishing a release:
 
