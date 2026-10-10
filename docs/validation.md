@@ -307,3 +307,38 @@ Public `pi5.7` artifact SHA256 values:
 - Local-registry manifest: `4e6ab56490c71a6d0ac02c7eac0bf476836754c773c6007e1f1ff96e90286617`.
 - Kernel: `e64d3eb7f60d54dd6507b5e7635bda9b575784d11c90f301f2cba324f9341c28`.
 - Initramfs: `2aa77f09a92770169bd91f3902e132271feb4a47e2ae6140097b801697c8a932`.
+
+## Two-node cluster and KubeSpan
+
+On 2026-10-10, both independent clusters were reset using EPHEMERAL-only wipes,
+preserving STATE/Wi-Fi and the EFI boot slots. The resulting `raspberry-pi`
+cluster has raspberry1 as its sole control plane on `v1.14.2-pi5.7`, and
+raspberry2 as a worker on `v1.14.2-pi5.6`, both running Kubernetes `v1.37.1`.
+KubeSpan is enabled with `allowDownPeerBypass: false` and a shared discovery
+identity. No image upgrade was performed as part of these networking tests.
+
+Initial attempts suffered API timeouts and weak Wi-Fi. After moving raspberry1
+closer to the repeater, a short five-packet check had no loss and 6–12 ms latency.
+The following cross-node tests then passed on the first Job attempt in each
+direction:
+
+- One HTTP server pod was pinned to each node, with a Service selecting only
+  that server. EndpointSlice inspection confirmed the intended node placement.
+- One client Job on each node resolved `kubernetes.default.svc.cluster.local`
+  and `registry.k8s.io`, fetched the opposite node's server through its Service
+  name, and checked the exact `talos-pi5-ok` response.
+- Each Job downloaded a 1 MiB payload from the opposite node and checked that
+  exactly 1,048,576 bytes arrived. Both client containers exited 0; each Job
+  recorded one success and zero failures. This checked transfer length, not a
+  payload checksum or sustained throughput.
+- KubeSpan peers remained `up`. Across the test observation window, raspberry1
+  received 1,266,320 and transmitted 1,400,420 additional bytes; raspberry2
+  received 1,424,532 and transmitted 1,269,008 additional bytes. These counters
+  include concurrent cluster traffic, not only the test payloads.
+- All Talos cluster health checks passed, including etcd, node readiness,
+  control-plane components, kubelet, kube-proxy and CoreDNS.
+
+The temporary `kubespan-verify` namespace and its Jobs, pods, Services and
+EndpointSlices were removed after the test. Both nodes remained Ready. This
+qualifies a short two-node smoke test in the improved Wi-Fi placement; it does
+not establish long-term stability, performance under load or fleet scale.

@@ -31,6 +31,11 @@ configuration belong in this repository. `_out/` and `private/` are ignored.
 
 ## Start here
 
+For the existing two-node cluster, use the [operations runbook](docs/runbook.md)
+for new upstream ports, upgrades, fresh installs and Wi-Fi-preserving resets.
+The [TOPF guide](docs/topf.md) covers the required custom management-client build
+and importing the cluster without replacing its identity.
+
 1. Set up a Linux ARM64 BuildKit builder using [the build guide](docs/building.md).
 2. Run `python3 scripts/prepare.py` to fetch the exact sources and apply patches.
 3. Build locally with `python3 scripts/release.py`. This creates public files in
@@ -85,9 +90,10 @@ brings kernel `6.18.54-talos`; the tested alpha prototype used `6.18.48-talos`.
 - Wi-Fi power saving is disabled for this Pi profile. Keep the antenna clear of
   the USB SSD/dock, and provide a suitable power supply. RF placement mattered in
   the prototype.
-- Long-term Wi-Fi reliability, multi-node operation and secure boot remain
-  unvalidated. See the recorded hardware tests rather than treating a successful
-  build as full qualification.
+- A two-node control-plane/worker cluster passed bidirectional DNS/HTTP and
+  1 MiB transfer tests with KubeSpan enabled. Long-term Wi-Fi reliability,
+  larger fleets and secure boot remain unvalidated. See the recorded hardware
+  tests rather than treating a successful build as full qualification.
 
 ## Sources and license
 

@@ -128,6 +128,11 @@ one-time migration from legacy images, and the `talosctl upgrade` workflow.
 
 ## Reset and recovery
 
+For the current stable port, prefer the [EPHEMERAL-only reset runbook](runbook.md#reset-while-retaining-wi-fi-and-boot-slots).
+It preserves STATE, Wi-Fi and EFI, and was used to recreate the current two-node
+cluster. The historical procedure below instead removes the machine config and
+requires a separate maintenance-network recovery path.
+
 For this custom layout, **do not run an unqualified full-disk reset**. To rebuild
 the cluster while preserving EFI boot assets, the alpha prototype successfully
 used this targeted reset:
