@@ -232,6 +232,13 @@ release, and no diagnostic flags or pending trial. The two failure-test images
 and their cache aliases were removed from the node; temporary privileged and
 smoke-test namespaces were deleted. Cluster node identity remained unchanged.
 
+The final physical power cycle also passed with the public image and diagnostics
+disabled. It booted the committed A slot with a new boot ID, firmware count 1
+and tryboot=0. All Talos/Kubernetes health checks and the DNS/HTTP smoke test
+passed; the original node UID was preserved. This validates a cold boot of the
+restored image, but does not explain the earlier connectivity loss or establish
+long-term boot/Wi-Fi reliability.
+
 The exact public `pi5.6` artifacts tested have these SHA256 values:
 
 - Boot bundle: `9de8f4783edd70820768182ffd7662ade50236e930c26553158a36837f95c77d`.
