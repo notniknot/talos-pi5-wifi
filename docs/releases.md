@@ -5,7 +5,7 @@ GitHub may hold source, draft releases and public artifacts.
 
 1. Keep `sources.lock.json`'s upstream and custom versions aligned, update patches,
    and commit the source. Increment `pi5.N` for changes on the same upstream.
-2. Run `python3 scripts/release.py --version v1.14.2-pi5.5` on your local builder.
+2. Run `python3 scripts/release.py --version v1.14.2-pi5.6` on your local builder.
 3. Test installation against a disposable loop disk, then boot the exact artifacts
    on hardware. Follow [the validation checklist](validation.md). Record results
    in release notes, including any skipped tests.
@@ -16,7 +16,7 @@ GitHub may hold source, draft releases and public artifacts.
    authenticated to your own repository and GHCR. They are intentionally manual.
 
 ```sh
-VERSION=v1.14.2-pi5.5
+VERSION=v1.14.2-pi5.6
 REPO=notniknot/talos-pi5-wifi
 # Run from the committed source used by the build.
 git tag -a "$VERSION" -m "Talos Pi 5 Wi-Fi $VERSION"

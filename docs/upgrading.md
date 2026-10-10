@@ -20,6 +20,7 @@ talosctl --context YOUR_PI_CONTEXT upgrade \
   --image REGISTRY/REPOSITORY/installer@sha256:YOUR_MANIFEST_DIGEST \
   --reboot-mode=powercycle --drain=false --wait
 talosctl --context YOUR_PI_CONTEXT health
+talosctl --context YOUR_PI_CONTEXT version
 kubectl --context YOUR_PI_KUBE_CONTEXT get nodes -o wide
 ```
 
@@ -29,6 +30,12 @@ The installer refuses to overwrite an uncommitted trial, a mismatched running
 slot or an unknown boot layout. On this single-node cluster, upgrades interrupt
 Kubernetes availability. The example disables draining for this single-node lab;
 with multiple nodes, normally keep draining enabled so workloads can move.
+
+Check that the **server** version is the release you intended to install. Talos's
+native wait/post-check tracks readiness and a changed boot ID; a healthy fallback
+can satisfy those checks too. A successful CLI wait alone does not prove the
+candidate was committed. This also matters when automating upgrades: compare the
+running server version with the expected release after the wait completes.
 
 To return to the previous committed image:
 

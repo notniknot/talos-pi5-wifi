@@ -2745,7 +2745,7 @@ index 2009dbe..15bc9d2 100644
  		&perf.Memory{},
  		&cri.BaseRuntimeSpecConfig{},
 diff --git a/internal/app/machined/pkg/system/services/udevd.go b/internal/app/machined/pkg/system/services/udevd.go
-index 242c7f8..b6e5dec 100644
+index 242c7f8..a1a5c7c 100644
 --- a/internal/app/machined/pkg/system/services/udevd.go
 +++ b/internal/app/machined/pkg/system/services/udevd.go
 @@ -5,10 +5,13 @@
@@ -2762,7 +2762,7 @@ index 242c7f8..b6e5dec 100644
  	"github.com/siderolabs/go-cmd/pkg/cmd"
  
  	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime"
-@@ -40,6 +43,20 @@ func (c *Udevd) ID(runtime.Runtime) string {
+@@ -40,6 +43,25 @@ func (c *Udevd) ID(runtime.Runtime) string {
  
  // PreFunc implements the Service interface.
  func (c *Udevd) PreFunc(ctx context.Context, r runtime.Runtime) error {
@@ -2773,10 +2773,15 @@ index 242c7f8..b6e5dec 100644
 +	if bytes.Contains(compatible, []byte("raspberrypi,5-model-b\x00")) {
 +		manager, err := kmod.New()
 +		if err != nil {
-+			return fmt.Errorf("initialize Pi Wi-Fi modules: %w", err)
++			return fmt.Errorf("initialize Pi boot modules: %w", err)
 +		}
-+		if err := manager.Load("brcmfmac-wcc", "", 0); err != nil {
-+			return fmt.Errorf("preload Pi Wi-Fi firmware vendor: %w", err)
++		// USB SSDs hold STATE, including Wi-Fi configuration. Load their host and
++		// storage drivers before coldplug, without depending on diagnostic-mode
++		// module loading or asynchronous discovery order to make STATE available.
++		for _, name := range []string{"brcmfmac-wcc", "xhci-hcd", "xhci-pci", "xhci-plat-hcd", "usb-storage", "uas"} {
++			if err := manager.Load(name, "", 0); err != nil {
++				return fmt.Errorf("preload Pi boot module %s: %w", name, err)
++			}
 +		}
 +	}
 +

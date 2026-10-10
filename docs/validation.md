@@ -167,5 +167,16 @@ removed. The node UID remained unchanged.
 The subsequent explicit rollback did not return online. Source inspection found
 that the Pi's kexec hook returned an error, which aborts the default reboot path
 before the firmware reboot task. Revision `pi5.5` changes that hook to a successful
-no-op and adds a regression test. Its hardware tests and automatic-failure test
-are still in progress; do not treat `pi5.3`/`pi5.4` as qualified upgrade releases.
+no-op and adds a regression test. A cold power cycle recovered the committed
+`pi5.4` slot; this recovery was manual, not a watchdog-fallback result.
+
+The first public `pi5.5` trial failed to become reachable. After the ten-minute
+startup deadline, the Pi automatically returned to committed `pi5.4` without
+physical intervention. Firmware boot count increased from 1 to 3, reset status
+changed to `0x20`, and the fallback reported tryboot=0. All Talos health checks
+passed. EFI inspection confirmed B remained selected, pending/tryboot metadata
+was cleared, and the candidate assets still matched their manifest. The CLI
+upgrade wait returned success despite fallback, so verify the running server
+version separately. Investigation of the candidate boot failure and the explicit
+rollback test are still in progress; none of these A/B revisions is fully
+qualified yet.
