@@ -33,6 +33,9 @@ configuration belong in this repository. `_out/` and `private/` are ignored.
 
 For the existing two-node cluster, use the [operations runbook](docs/runbook.md)
 for new upstream ports, upgrades, fresh installs and Wi-Fi-preserving resets.
+The [portable TOPF configuration and handoff guide](clusters/raspberry-pi/README.md)
+manage both pi5.7 nodes on the LAN without KubeSpan; credentials and binaries are
+kept outside Git.
 The [TOPF guide](docs/topf.md) covers the required custom management-client build
 and importing the cluster without replacing its identity.
 

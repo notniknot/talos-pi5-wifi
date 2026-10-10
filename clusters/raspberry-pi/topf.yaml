@@ -1,0 +1,13 @@
+clusterName: raspberry-pi
+clusterEndpoint: https://192.168.178.31:6443
+kubernetesVersion: 1.37.1
+talosVersion: 1.14.2-pi5.7
+secretsPath: secrets/secrets.yaml
+patchesDir: patches
+nodes:
+  - host: raspberry1
+    ip: 192.168.178.31
+    role: control-plane
+  - host: raspberry2
+    ip: 192.168.178.110
+    role: worker

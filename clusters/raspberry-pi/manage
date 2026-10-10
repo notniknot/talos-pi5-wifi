@@ -1,0 +1,56 @@
+#!/bin/bash
+# Keep all generated credentials/output relative to this portable cluster folder.
+set -euo pipefail
+umask 077
+HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+export TOPFCONFIG="$HERE/topf.yaml"
+export TALOSCONFIG="$HERE/secrets/talosconfig"
+export KUBECONFIG="$HERE/secrets/kubeconfig"
+
+usage() {
+  echo "Usage: $0 {verify-tools|render|credentials|status|health|plan|apply NODE|kubectl ARGS...}"
+}
+action=${1:-help}
+if [[ "$action" == help || "$action" == --help ]]; then usage; exit 0; fi
+shift
+case "$action" in
+  verify-tools) cd "$HERE"; exec shasum -a 256 -c tools.sha256 ;;
+  render|credentials|status|health|plan|apply|kubectl) ;;
+  *) usage >&2; exit 1 ;;
+esac
+for file in bin/topf bin/talosctl secrets/secrets.yaml patches/all/90-wifi.yaml; do
+  if [[ ! -s "$HERE/$file" ]]; then
+    echo "Missing $file. Restore the handoff files; do not generate replacement cluster secrets." >&2
+    exit 1
+  fi
+done
+for tool in topf talosctl; do
+  [[ -x "$HERE/bin/$tool" ]] || { echo "bin/$tool must be executable" >&2; exit 1; }
+done
+case "$action" in
+  render)
+    "$HERE/bin/topf" render -o "$HERE/output"
+    for node in raspberry1 raspberry2; do
+      "$HERE/bin/talosctl" validate --config "$HERE/output/$node.yaml" --mode metal --strict
+    done
+    ;;
+  credentials)
+    # Generate fresh client certificates from the existing cluster CA.
+    talos_tmp=$(mktemp "$HERE/secrets/.talosconfig.XXXXXX")
+    kube_tmp=$(mktemp "$HERE/secrets/.kubeconfig.XXXXXX")
+    trap 'rm -f "$talos_tmp" "$kube_tmp"' EXIT
+    "$HERE/bin/topf" talosconfig > "$talos_tmp"
+    "$HERE/bin/topf" kubeconfig > "$kube_tmp"
+    mv "$talos_tmp" "$TALOSCONFIG"
+    mv "$kube_tmp" "$KUBECONFIG"
+    ;;
+  plan) exec "$HERE/bin/topf" apply --dry-run "$@" ;;
+  apply)
+    [[ $# == 1 && ( "$1" == raspberry1 || "$1" == raspberry2 ) ]] || { usage >&2; exit 1; }
+    exec "$HERE/bin/topf" --nodes-filter "^$1$" apply --mode=no-reboot
+    ;;
+  status) exec kubectl get nodes -o wide ;;
+  # Health runs from one control plane and discovers the rest of the cluster.
+  health) exec "$HERE/bin/talosctl" -n 192.168.178.31 health --wait-timeout=5m ;;
+  kubectl) exec kubectl "$@" ;;
+esac

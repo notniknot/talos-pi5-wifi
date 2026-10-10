@@ -18,12 +18,14 @@ Checked on 2026-10-10:
   `232db62aef7b1e714106edbc62f8bf377f0498ec`, linked against this repository's
   patched Talos `v1.14.2` sources, successfully rendered both saved Pi configs.
   The custom client validated both outputs in strict metal mode. After removing
-  redundant list patches described below, the outputs matched the saved configs
+  redundant list patches, the outputs matched the saved configs
   structurally. After moving raspberry1 closer to the repeater, a live
   `apply --dry-run` reached both nodes. It returned exit code 2 for document
   reordering; comparing the rendered and live configs by `(kind, name)` confirmed
-  identical settings on both nodes. No configuration was applied, and TOPF's
-  mutating apply/upgrade/reset operations have not been hardware-tested here.
+  identical settings on both nodes. After the final LAN-only reset, both nodes
+  use fresh TOPF-generated configurations: live dry-run and no-change apply both
+  return exit code 0. Applying a changed configuration through TOPF, and TOPF's
+  upgrade/reset operations, have not been hardware-tested here.
 - TOPF generates an Image Factory installer by default. Override it explicitly
   with our custom installer for every node. Setting only `talosVersion` is
   insufficient.
@@ -67,6 +69,11 @@ export TOPF="$PWD/_out/topf-pi5"
 "$TOPF" --version
 ```
 
+To refresh an Apple Silicon handoff, copy this binary and the matching custom
+client into `clusters/raspberry-pi/bin/` as `topf` and `talosctl` with executable
+permissions. Regenerate `tools.sha256` there and update `toolchain.json` only
+after validating the new tools against the saved configuration and live preview.
+
 The extra replacements come from the prepared Talos modules' `go.mod` files;
 Go does not inherit dependency-module replacements automatically. When porting
 to another Talos base, review these replacements and the TOPF API compatibility,
@@ -75,151 +82,60 @@ update the version label, and rerun offline rendering/validation. Keep the build
 verified for the versions above; it is not a promise that every future TOPF and
 Talos version will compile together.
 
-## Adopt the existing cluster without changing its identity
+## Current cluster configuration and handoff
 
-The local working directory is `private/topf-raspberry-pi/`; an offline-validated
-copy was prepared there during this runbook's creation. It has not been applied
-to the cluster. The following steps show how to reproduce the import in a fresh
-directory. Do not overwrite a maintained TOPF configuration with an old snapshot.
+Use [clusters/raspberry-pi](../clusters/raspberry-pi/README.md) as the source of
+truth for this cluster. It contains `topf.yaml`, minimal shared patches and a
+portable `manage` helper. Both nodes run pi5.7; raspberry1 is the control plane,
+raspberry2 is the worker, and KubeSpan is disabled on this LAN.
 
-Set `TALOSCTL`, `TALOSCONFIG` and `KUBECONFIG` as in [the operations runbook](runbook.md).
-Take fresh backups and confirm the saved full node configs describe the live
-cluster before importing them. For raw `get machineconfig -o json` output, the
-`spec` field is the complete YAML **string**; extract it into a private file,
-not terminal output. Never import configs from the previous independent clusters.
+The earlier `private/topf-raspberry-pi` snapshot import belongs to the old cluster
+identity. Do not apply it or import its secrets after the final reset. Current
+secrets live in `clusters/raspberry-pi/secrets/`, and the Wi-Fi patch is
+`clusters/raspberry-pi/patches/all/90-wifi.yaml`; both are ignored by Git. Restore
+these from a trusted private handoff, rather than generating new cluster secrets.
 
-```sh
-umask 077
-mkdir -p private/topf-raspberry-pi/node/raspberry1
-mkdir -p private/topf-raspberry-pi/node/raspberry2
-"$TALOSCTL" gen secrets \
-  --from-controlplane-config private/raspberry-pi/raspberry1.yaml \
-  --output-file private/topf-raspberry-pi/secrets.yaml
-cp private/raspberry-pi/raspberry1.yaml private/topf-raspberry-pi/node/raspberry1/00-current.yaml
-cp private/raspberry-pi/raspberry2.yaml private/topf-raspberry-pi/node/raspberry2/00-current.yaml
-```
-
-Importing the existing secrets preserves the cluster CA, tokens and encryption
-material. Do not let TOPF generate new secrets for an existing cluster; stop if
-it unexpectedly prompts to do so. `topf secrets` prints the bundle to stdout,
-even with output redaction enabled.
-
-Create `private/topf-raspberry-pi/topf.yaml`:
-
-```yaml
-clusterName: raspberry-pi
-clusterEndpoint: https://192.168.178.31:6443
-kubernetesVersion: 1.37.1
-talosVersion: 1.14.2
-secretsPath: secrets.yaml
-nodes:
-  - host: raspberry1
-    ip: 192.168.178.31
-    role: control-plane
-  - host: raspberry2
-    ip: 192.168.178.110
-    role: worker
-```
-
-The imported full configs are a conservative starting point: they preserve
-hostnames, Wi-Fi, KubeSpan/discovery, installer selection and cluster identity.
-They also pin Kubernetes component versions, so they must later be updated along
-with `kubernetesVersion`. TOPF's `host` field alone does **not** set a node's Talos
-hostname; keep `HostnameConfig` in the patches.
-
-Render without contacting the nodes:
+From the repository root:
 
 ```sh
-export TOPFCONFIG="$PWD/private/topf-raspberry-pi/topf.yaml"
-"$TOPF" render -o private/topf-raspberry-pi/rendered
-"$TALOSCTL" validate --config private/topf-raspberry-pi/rendered/raspberry1.yaml --mode metal --strict
-"$TALOSCTL" validate --config private/topf-raspberry-pi/rendered/raspberry2.yaml --mode metal --strict
+clusters/raspberry-pi/manage verify-tools
+clusters/raspberry-pi/manage credentials
+clusters/raspberry-pi/manage render
+clusters/raspberry-pi/manage plan
 ```
 
-Compare parsed YAML documents by `(kind, name)`, including all secret values,
-locally without logging their contents. Whole-config strategic merge can append
-list entries already present in generated defaults. In this cluster, the only
-differences were identical duplicate entries in raspberry1's
-`KubeAdmissionControlConfig` and `KubeEtcdEncryptionConfig`, and raspberry2's
-`KubeAPIServerCAConfig`. Omitting those three documents from the corresponding
-`00-current.yaml` patches let TOPF regenerate them from the imported secrets and
-defaults, producing an exact structural match. Only do this after verifying that
-the regenerated documents equal the originals; customized admission policies,
-encryption configurations or extra trusted CAs must not be discarded.
-
-Check the complete diff against live nodes before any apply:
-
-```sh
-"$TOPF" --nodes-filter '^raspberry2$' apply --dry-run
-"$TOPF" --nodes-filter '^raspberry1$' apply --dry-run
-```
-
-Exit code `2` means changes were found; it is not a successful no-change adoption.
-The initial live preview reported document reordering only; a private structural
-comparison confirmed there were no setting changes. Check such diffs rather than
-assuming every exit code 2 is harmless.
-Stop on connectivity, schema or certificate errors. The first adoption should
-have no unintended differences. Do not use `--auto-bootstrap` on this already
-bootstrapped cluster. Avoid `--redact=false`; rendered files and private patch
-files contain credentials regardless of terminal redaction.
-
-## Routine configuration changes
+`credentials` regenerates client certificates from the existing CA, without
+changing the cluster. Rendered configs in `output/` contain secrets too. The
+helper refuses to run if the secrets bundle or Wi-Fi patch is missing, preventing
+accidental creation of a new cluster identity during ordinary maintenance.
 
 TOPF merges `all/`, then the role directory (`control-plane/` or `worker/`), then
-`node/<hostname>/`, with lexical filename order within each directory. See the
+`node/<hostname>/`, in lexical filename order within each directory. See the
 [upstream configuration model](https://postfinance.github.io/topf/main/configuration-model/).
-While `node/*/00-current.yaml` remains a full baseline, it can override shared
-patches: edit the relevant per-node file or add a later per-node patch. Do not
-silently keep two competing sources of desired state.
+This setup uses small shared patches and a hostname template. It does not copy
+full generated configs into per-node patches, so old component images and list
+entries cannot silently override future generated defaults.
 
-As a separate reviewed cleanup, reduce the snapshots to only necessary overrides
-and move common fields into `all/`, requiring an unchanged rendered result after
-each step. Keep `secrets.yaml`, plaintext Wi-Fi and rendered configs private, or
-use SOPS before putting configuration in a separate infrastructure repository.
-The build repository must never receive plaintext cluster secrets.
-
-Always retain these settings when reorganizing:
-
-```yaml
-apiVersion: v1alpha1
-kind: HostnameConfig
-auto: "off"
-hostname: raspberry2 # raspberry1 in its own node patch
----
-apiVersion: v1alpha1
-kind: KubeSpanConfig
-enabled: true
-allowDownPeerBypass: false
----
-apiVersion: v1alpha1
-kind: UnattendedInstallConfig
-installer:
-  image: ghcr.io/notniknot/talos-pi5-wifi/installer@sha256:REPLACE_WITH_VERIFIED_DIGEST
-provisioning:
-  diskSelector:
-    match: disk.dev_path == "/dev/sda"
-  wipe: false
-```
-
-The digest is a placeholder, not an existing published image. Retain the existing
-disk/bootloader settings too; this partial patch is not a full machine config.
-Keep the `WifiConfig`, `LinkConfig`, `DHCPv4Config` and shared discovery identity
-from the imported configs. Never configure legacy `machine.install` alongside
-`UnattendedInstallConfig`.
-
-After rendering and reviewing an intentional change, apply to one node first:
+After reviewing an intentional change:
 
 ```sh
-"$TOPF" --nodes-filter '^raspberry2$' apply --dry-run
-"$TOPF" --nodes-filter '^raspberry2$' apply --mode=no-reboot
-kubectl get nodes -o wide
-"$TALOSCTL" -e 192.168.178.110 -n 192.168.178.110 get kubespanpeerstatuses
+clusters/raspberry-pi/manage render
+clusters/raspberry-pi/manage plan
+clusters/raspberry-pi/manage apply raspberry2
+clusters/raspberry-pi/manage health
+clusters/raspberry-pi/manage apply raspberry1
 ```
 
-`no-reboot` rejects a change requiring reboot. If a reboot is actually needed,
-plan that explicitly and choose `auto`/`staged` after reviewing the diff. Repeat
-for raspberry1 only after the worker is healthy. Keep TOPF's normal confirmation
-and readiness checks; do not bypass them to work around unreliable Wi-Fi.
+Apply uses normal TOPF confirmation and `no-reboot`; changes requiring reboot
+must be planned separately. A plan exits 2 when differences are found and 0 for
+no changes. Stop on certificate/schema/connectivity errors. Do not use
+`--auto-bootstrap` on the existing cluster, remove Wi-Fi to bypass a validation
+error, or configure `machine.install` alongside `UnattendedInstallConfig`.
+
+For direct custom-client commands, set the paths from [the operations runbook](runbook.md).
+Keep the installer override: TOPF's Image Factory default lacks this port. Do
+not use `topf upgrade` or `topf reset` for this setup; use the tested custom-client
+procedures with explicit targets instead.
 
 ## Kubernetes version upgrades
 
@@ -239,21 +155,12 @@ K8S_VERSION=1.37.2 # Example only: choose an available, supported target.
 kubectl get nodes -o wide
 ```
 
-After it succeeds, set `kubernetesVersion` in `topf.yaml` to match **and refresh
-the component-version fields in the imported per-node baselines from the live
-configs**. Render and dry-run both nodes until no version downgrade is proposed.
-Only changing `topf.yaml` while retaining old component image/kubelet fields in
-the later patches can revert an upgrade.
+After it succeeds, set `kubernetesVersion` in `clusters/raspberry-pi/topf.yaml`
+to match, render, and preview both nodes until no version downgrade is proposed.
+The current patches do not pin Kubernetes component images. If you add such
+per-node overrides later, update them along with the top-level version.
 
-Generate client configs privately when needed; these files are not merged into
-your global contexts automatically:
-
-```sh
-umask 077
-"$TOPF" talosconfig > private/topf-raspberry-pi/talosconfig
-"$TOPF" kubeconfig > private/topf-raspberry-pi/kubeconfig
-```
-
-TOPF's generated multi-node talosconfig selects all nodes by default. Always
-pass a single `-n` for destructive `talosctl` operations. Keep the original
-private client configs until the generated replacements have been tested.
+Use `clusters/raspberry-pi/manage credentials` to refresh client configs privately.
+The helper does not modify global contexts. TOPF's multi-node talosconfig selects
+all nodes by default; always pass a single `-n` for destructive `talosctl`
+operations. Use a control-plane endpoint for worker upgrades that drain workloads.

@@ -10,18 +10,19 @@ published version tag.
 | Node | Address | Role | Last verified OS |
 | --- | --- | --- | --- |
 | raspberry1 | 192.168.178.31 | Sole control plane | v1.14.2-pi5.7 |
-| raspberry2 | 192.168.178.110 | Worker | v1.14.2-pi5.6 |
+| raspberry2 | 192.168.178.110 | Worker | v1.14.2-pi5.7 |
 
 Cluster/context name: `raspberry-pi`. Kubernetes was `v1.37.1` when this runbook
-was written. Both nodes have KubeSpan enabled and share the cluster's discovery
-identity. Keep their DHCP reservations stable. The control plane is not highly
+was written. Both nodes use the same LAN with KubeSpan disabled. Their current
+configuration is in [clusters/raspberry-pi](../clusters/raspberry-pi/README.md).
+Keep their DHCP reservations stable. The control plane is not highly
 available: taking raspberry1 down interrupts the Kubernetes API and etcd.
 
 ```sh
-export TALOSCTL="$PWD/_out/talosctl-darwin-arm64/talosctl-darwin-arm64"
+export TALOSCTL="$PWD/clusters/raspberry-pi/bin/talosctl"
 # Linux ARM64: use _out/talosctl-linux-arm64/talosctl-linux-arm64 instead.
-export TALOSCONFIG="$PWD/private/raspberry-pi/talosconfig"
-export KUBECONFIG="$PWD/private/raspberry-pi/kubeconfig"
+export TALOSCONFIG="$PWD/clusters/raspberry-pi/secrets/talosconfig"
+export KUBECONFIG="$PWD/clusters/raspberry-pi/secrets/kubeconfig"
 "$TALOSCTL" -e 192.168.178.31 -n 192.168.178.31 version
 kubectl get nodes -o wide
 "$TALOSCTL" -e 192.168.178.31 -n 192.168.178.31 get kubespanpeerstatuses
@@ -32,13 +33,11 @@ These exports select only this shell's cluster. Global contexts also exist in
 `~/.kube/config` and `~/.talos/config`; use `--context raspberry-pi` explicitly
 when not using the private files. A worker cannot proxy requests to another node.
 
-Each KubeSpan peer should be `up`, with a recent handshake and increasing RX/TX
-when traffic crosses nodes. KubeSpan encrypts inter-node traffic; the Mac still
-needs a reachable LAN endpoint. After raspberry1 was moved closer to the
-repeater, both nodes passed Talos health checks and bidirectional pod DNS/HTTP
-and 1 MiB transfer tests with KubeSpan up. See [validation](validation.md#two-node-cluster-and-kubespan)
-for the results. Earlier Wi-Fi/API timeouts show that placement matters; these
-short tests do not establish long-term reliability.
+The KubeSpan peer queries should now return no peers. Flannel uses the LAN for
+inter-node pod traffic, without KubeSpan encryption. Earlier KubeSpan tests remain
+recorded in [validation](validation.md#two-node-cluster-and-kubespan) as historical
+evidence. Earlier Wi-Fi/API timeouts show that placement matters; short tests do
+not establish long-term reliability.
 
 ## Before a disruptive operation
 
@@ -51,7 +50,9 @@ failed upgrade. Talos has no SSH service.
 umask 077
 BACKUP="$PWD/private/backups/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP"
-cp private/raspberry-pi/{talosconfig,kubeconfig,raspberry1.yaml,raspberry2.yaml} "$BACKUP/"
+cp -R clusters/raspberry-pi/secrets "$BACKUP/"
+cp -R clusters/raspberry-pi/patches "$BACKUP/"
+cp clusters/raspberry-pi/topf.yaml "$BACKUP/"
 "$TALOSCTL" -e 192.168.178.31 -n 192.168.178.31 etcd snapshot "$BACKUP/etcd.snapshot"
 "$TALOSCTL" -e 192.168.178.31 -n 192.168.178.31 get machineconfig -o json > "$BACKUP/raspberry1.json"
 "$TALOSCTL" -e 192.168.178.110 -n 192.168.178.110 get machineconfig -o json > "$BACKUP/raspberry2.json"
@@ -138,7 +139,7 @@ automatically; arrange a maintenance window if required.
 ```sh
 PI=192.168.178.110
 "$TALOSCTL" -e "$PI" -n "$PI" read /proc/sys/kernel/random/boot_id
-"$TALOSCTL" -e "$PI" -n "$PI" upgrade \
+"$TALOSCTL" -e 192.168.178.31 -n "$PI" upgrade \
   --image "$IMAGE" --reboot-mode=powercycle --wait --timeout=20m
 "$TALOSCTL" -e "$PI" -n "$PI" version
 "$TALOSCTL" -e "$PI" -n "$PI" get machinestatus
@@ -147,7 +148,8 @@ kubectl wait --for=condition=Ready node/raspberry2 --timeout=5m
 ```
 
 Use the candidate release's custom client when an upstream version transition
-requires it. `powercycle` requests a firmware reboot; it does not ask a human
+requires it. Use the control-plane API endpoint for the worker upgrade so the
+client can fetch its kubeconfig for draining. `powercycle` requests a firmware reboot; it does not ask a human
 to unplug power. Compare the **server** version with `$VERSION`: a successful
 CLI wait can also mean the old image recovered after a failed trial. Confirm
 the boot ID changed, Kubernetes is Ready, and application/DNS/inter-node traffic
@@ -160,7 +162,7 @@ window and wait for `node/raspberry1` instead. Run full health from raspberry1:
   --control-plane-nodes 192.168.178.31 --worker-nodes 192.168.178.110
 ```
 
-Update each node's saved `UnattendedInstallConfig.installer.image` to the
+Update the shared `patches/all/00-install.yaml` installer reference to the
 validated digest so later config application cannot restore an old desired
 image. Keep the immutable digest and hardware results in release notes; publish
 the source tag/release using [releases](releases.md). No GitHub Actions build is
@@ -203,7 +205,7 @@ do not `dd` it to an SSD. Use the complete [installation guide](installing.md):
    installation disk before erasing Pi OS.
 4. Make the public custom installer reachable and apply the correct full machine
    configuration. This initial installation destroys the disk's old contents.
-   Keep Wi-Fi, link/DHCP, hostname and KubeSpan/discovery documents in that config.
+   Keep Wi-Fi, link/DHCP, hostname and the intended network settings in that config.
 5. For a replacement **raspberry2 joining this cluster**, use its existing worker
    configuration/current cluster secrets, with its intended image and disk;
    do not generate another cluster and do not run `bootstrap` on the worker.
@@ -248,7 +250,7 @@ replacement for workload shutdown. Verify the new boot ID/uptime as well:
 Resetting the sole control plane destroys its etcd database. Do this only when
 discarding the cluster or following a tested etcd restore plan. For a new empty
 cluster, prepare and validate both full configs first (one control plane, one
-worker, shared new secrets, correct Wi-Fi/KubeSpan and hostnames). Save the old
+worker, shared new secrets, correct Wi-Fi and hostnames, KubeSpan disabled). Save the old
 and new Talos client configs separately.
 
 Using the **old** credentials, apply each new config with `--mode=staged`, check
@@ -257,7 +259,7 @@ persists the new config for the next boot; it does not activate it immediately.
 Do not overwrite an old client context until both resets have been submitted.
 After reboot use the **new** credentials, bootstrap raspberry1 **once**, retrieve
 the new kubeconfig, and let raspberry2 join. Verify both hostnames, roles,
-readiness, KubeSpan and cross-node traffic before calling the reset complete.
+readiness, absence of KubeSpan peers and cross-node traffic before calling the reset complete.
 
 ```sh
 # Repeat per node, with OLD_TALOSCONFIG and NEW_NODE_CONFIG set deliberately.
@@ -280,7 +282,8 @@ from the Wi-Fi-preserving reset above, and neither is secure media erasure.
 
 ## Manage configuration and Kubernetes with TOPF
 
-Follow [the TOPF runbook](topf.md) for the compatible local build, importing this
-cluster's existing secrets, reviewing rendered configuration, and applying one
+Use the [portable cluster handoff](../clusters/raspberry-pi/README.md) for normal
+maintenance and [the TOPF runbook](topf.md) to rebuild its compatible client.
+Preserve the existing secrets, review rendered configuration, and apply one
 node at a time. TOPF manages Talos and Kubernetes cluster configuration; use
 `kubectl`, Helm or your GitOps controller for application resources.

@@ -1,0 +1,9 @@
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+installer:
+  # Verified pi5.7 OCI manifest; see README before attempting an image pull.
+  image: ghcr.io/notniknot/talos-pi5-wifi/installer@sha256:4104e1153d43300bc99f2d7c71ecb393b0d14bf1b59a4d6b84b7f190982c9725
+provisioning:
+  diskSelector:
+    match: disk.dev_path == "/dev/sda"
+  wipe: false

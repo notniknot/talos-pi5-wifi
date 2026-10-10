@@ -1,0 +1,8 @@
+{
+  "platform": "darwin/arm64",
+  "topf_source_commit": "232db62aef7b1e714106edbc62f8bf377f0498ec",
+  "topf_build": "local build against this port; see docs/topf.md",
+  "talos_upstream_version": "v1.14.2",
+  "talos_custom_client": "v1.14.2-pi5.7",
+  "talos_client_build_commit": "c02c3925c11b2e44a8f7599ceaa64176948a0f7e"
+}
