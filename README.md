@@ -5,14 +5,13 @@ onboard Wi-Fi and an SSD connected through a USB 3 SATA adapter. It boots the
 ARM64 kernel directly through Raspberry Pi firmware and installs Kubernetes
 without Ethernet or a serial debug cable.
 
-**Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.6`.** This revision
-has booted the public image over Wi-Fi without diagnostic flags, preserved the
-existing single-node cluster and passed Talos health checks. The port now has
-firmware A/B upgrades and readiness-gated slot confirmation. Native upgrades,
-explicit rollback and automatic recovery from a deliberately hung kernel have
-passed hardware tests; exact results and limits are recorded in
-[validation](docs/validation.md). This is
-not an official Sidero Labs image or a production-supported distribution.
+**Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.7`.** This revision
+corrects the private bootstrap device-tree path and generated single-node
+configuration example; hardware validation of this revision is in progress.
+The preceding `pi5.6` image passed native upgrades, explicit rollback, automatic
+recovery from a deliberately hung kernel, and a public cold boot over Wi-Fi.
+Exact results and limits are recorded in [validation](docs/validation.md).
+This is not an official Sidero Labs image or a production-supported distribution.
 
 Earlier revisions exposed missing Wi-Fi modules (`pi5.1`), a default reboot error
 (`pi5.3`/`pi5.4`), and an apparent USB startup-order dependency (`pi5.5`). Use the
@@ -34,7 +33,7 @@ configuration belong in this repository. `_out/` and `private/` are ignored.
 1. Set up a Linux ARM64 BuildKit builder using [the build guide](docs/building.md).
 2. Run `python3 scripts/prepare.py` to fetch the exact sources and apply patches.
 3. Build locally with `python3 scripts/release.py`. This creates public files in
-   `_out/releases/v1.14.2-pi5.6/`; it does not publish or install anything.
+   `_out/releases/v1.14.2-pi5.7/`; it does not publish or install anything.
 4. For a Pi reachable only over Wi-Fi, create a **private** maintenance image and
    follow [the installation guide](docs/installing.md).
 
@@ -59,7 +58,7 @@ experimental distribution. Do not use `+pi5.1`, because `+` is not allowed in
 OCI tags. Never overwrite a published tag.
 
 The planned installer image name is
-`ghcr.io/notniknot/talos-pi5-wifi/installer:v1.14.2-pi5.6`.
+`ghcr.io/notniknot/talos-pi5-wifi/installer:v1.14.2-pi5.7`.
 This name does not imply that an image has already been published. Talos reports
 the complete custom version; `build.json` also records upstream and project
 commits separately. See [local releases](docs/releases.md).
