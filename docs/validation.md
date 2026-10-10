@@ -342,3 +342,54 @@ The temporary `kubespan-verify` namespace and its Jobs, pods, Services and
 EndpointSlices were removed after the test. Both nodes remained Ready. This
 qualifies a short two-node smoke test in the improved Wi-Fi placement; it does
 not establish long-term stability, performance under load or fleet scale.
+
+
+## Final LAN-only cluster and maintenance handoff
+
+Later on 2026-10-10, raspberry2 was upgraded from pi5.6 to pi5.7, then both
+nodes were reset and joined a new `raspberry-pi` cluster with fresh shared
+credentials. Raspberry1 remains the sole control plane (`192.168.178.31`),
+and raspberry2 is the worker (`192.168.178.110`). Both report Talos
+`v1.14.2-pi5.7` and Kubernetes `v1.37.1`.
+
+The upgrade used the verified public OCI archive through a temporary LAN image
+cache. Its original OCI manifest digest is
+`sha256:4104e1153d43300bc99f2d7c71ecb393b0d14bf1b59a4d6b84b7f190982c9725`;
+the earlier local-registry digest above reflects a converted manifest, with the
+same image configuration/root filesystem. The GHCR name used for the cache is
+not evidence that this installer has been published to GHCR.
+
+The installer staged pi5.7 in slot B, but the default drain step failed because
+the client connected directly to the worker and could not retrieve a
+control-plane kubeconfig. Installation was not repeated. An explicit Kubernetes
+drain succeeded, then `talosctl reboot --mode=powercycle` booted the staged
+candidate. Its boot ID changed, the running slot was B, Talos recorded slot
+confirmation, and the worker was uncordoned. All cluster health checks passed.
+Future worker upgrades should use the control plane as their API endpoint.
+
+Fresh TOPF-generated configs were staged before EPHEMERAL-only resets, preserving
+STATE/Wi-Fi and the EFI layout. The new control plane was bootstrapped once.
+The minimal configuration in `clusters/raspberry-pi` explicitly disables
+KubeSpan, and both live configs contain no temporary registry mirror. KubeSpan
+peer queries return no peers. All Talos health checks passed on the new cluster.
+
+The reusable `tests/cross-node.yaml` checks passed in both directions on the
+first Job attempt, with one success, zero failures and exit code 0 per client:
+
+- Kubernetes service DNS and external DNS resolution.
+- HTTP through a Service selecting only the opposite node's server; EndpointSlice
+  inspection confirmed the intended node placement and ready endpoints.
+- Exact response text and a 1,048,576-byte transfer from the opposite node.
+
+The test namespace was deleted and the temporary installer cache stopped.
+These are short LAN smoke tests, not sustained Wi-Fi or load testing.
+
+The Apple Silicon handoff includes pinned custom clients, tool hashes, minimal
+TOPF patches and a helper that refuses missing secrets/Wi-Fi configuration.
+The copied handoff was rendered and checked against the live cluster from its
+new location; both tool hashes and all bundled recovery checksums matched.
+Both generated configs pass strict Talos validation. Live TOPF dry-run and
+no-change apply return exit code 0 for both nodes. Changed-config TOPF apply,
+TOPF upgrade and TOPF reset were not tested; the latter two are deliberately
+excluded from the handoff's operating procedure. Client credentials and Wi-Fi
+secrets remain outside Git.

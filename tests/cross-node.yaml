@@ -1,0 +1,239 @@
+# Two-node smoke test; delete namespace pi5-cross-node-test after verification.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pi5-cross-node-test
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-raspberry1
+  namespace: pi5-cross-node-test
+  labels:
+    app: web-raspberry1
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: web
+    image: busybox:1.37.0
+    command:
+    - sh
+    - -ec
+    args:
+    - printf 'talos-pi5-ok\n' > /www/index.html; dd if=/dev/zero of=/www/payload bs=1024
+      count=1024; exec httpd -f -p 8080 -h /www
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        memory: 64Mi
+    ports:
+    - containerPort: 8080
+    readinessProbe:
+      httpGet:
+        path: /
+        port: 8080
+    volumeMounts:
+    - name: content
+      mountPath: /www
+  volumes:
+  - name: content
+    emptyDir: {}
+  nodeName: raspberry1
+  tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-raspberry1
+  namespace: pi5-cross-node-test
+spec:
+  selector:
+    app: web-raspberry1
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: from-raspberry1
+  namespace: pi5-cross-node-test
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: check
+        image: busybox:1.37.0
+        command:
+        - sh
+        - -ec
+        args:
+        - |
+          nslookup kubernetes.default.svc.cluster.local
+          nslookup registry.k8s.io
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if wget -qO- -T 10 http://web-raspberry2:8080 | grep -x talos-pi5-ok; then
+              test "$(wget -qO- -T 30 http://web-raspberry2:8080/payload | wc -c)" -eq 1048576
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            memory: 64Mi
+      nodeName: raspberry1
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-raspberry2
+  namespace: pi5-cross-node-test
+  labels:
+    app: web-raspberry2
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: web
+    image: busybox:1.37.0
+    command:
+    - sh
+    - -ec
+    args:
+    - printf 'talos-pi5-ok\n' > /www/index.html; dd if=/dev/zero of=/www/payload bs=1024
+      count=1024; exec httpd -f -p 8080 -h /www
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        memory: 64Mi
+    ports:
+    - containerPort: 8080
+    readinessProbe:
+      httpGet:
+        path: /
+        port: 8080
+    volumeMounts:
+    - name: content
+      mountPath: /www
+  volumes:
+  - name: content
+    emptyDir: {}
+  nodeName: raspberry2
+  tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-raspberry2
+  namespace: pi5-cross-node-test
+spec:
+  selector:
+    app: web-raspberry2
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: from-raspberry2
+  namespace: pi5-cross-node-test
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: check
+        image: busybox:1.37.0
+        command:
+        - sh
+        - -ec
+        args:
+        - |
+          nslookup kubernetes.default.svc.cluster.local
+          nslookup registry.k8s.io
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if wget -qO- -T 10 http://web-raspberry1:8080 | grep -x talos-pi5-ok; then
+              test "$(wget -qO- -T 30 http://web-raspberry1:8080/payload | wc -c)" -eq 1048576
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            memory: 64Mi
+      nodeName: raspberry2
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
