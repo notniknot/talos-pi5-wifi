@@ -58,7 +58,9 @@ Before publishing a release:
   public rootfs and no private data in the release directory.
 - Run `scripts/test-installer.sh` on the Linux builder with the public installer.
   It creates its own disposable loop device, installs into that, checks boot
-  assets, and verifies that an upgrade fails before changing any disk byte.
+  assets, stages an A/B upgrade without changing the active slot or cluster-data
+  partitions, and verifies that pending-trial and legacy-layout upgrades are
+  rejected before changing any disk byte.
 - Test private tryboot and recovery to Pi OS before erasing a disk.
 - Test the **public installed initramfs** loading Wi-Fi config from STATE, both
   warm and cold boot. Isolate any requirement for early USB diagnostics.
@@ -132,3 +134,38 @@ not a Talos API upgrade. Diagnostic early USB loading remained enabled. A fresh
 stable installation without that setting, automatic rollback, and long-term
 Wi-Fi reliability still need separate hardware validation. Build metadata retains
 `hardware_validated: false` because the full release qualification is incomplete.
+
+## A/B upgrade implementation
+
+The `pi5.3` and `pi5.4` local builds use project commit `22324ce` and the same
+upstream Talos/kernel versions as `pi5.2`. They add the Pi firmware tryboot reboot
+handler, two boot slots, readiness-gated confirmation and watchdog fallback.
+
+Local validation on 2026-10-10 passed:
+
+- Complete source preparation, Python tests, Wi-Fi tests and image-content guards.
+- Boot-slot unit tests, including interrupted confirmation, failed trials,
+  explicit rollback, corrupted assets and invalid metadata.
+- Existing upgrade-fallback, runtime-watchdog and sequencer tests.
+- Full kernel, machine daemon, public installer/initramfs and both client builds.
+- Disposable-disk integration for both final installers: initial install, staged
+  upgrade, unchanged active assets/GPT/seeded STATE and EPHEMERAL, and byte-for-byte
+  refusal of pending-trial and legacy-layout upgrades.
+
+The existing physical Pi was migrated to slot A on `pi5.3` using an EFI-only file
+update after off-device backups. It returned over Wi-Fi through a Talos software
+reboot, retained its Kubernetes node UID, and passed all Talos health checks.
+This bootstrap slot retains the diagnostic early USB-loading setting.
+
+A standard `talosctl upgrade --reboot-mode=powercycle --drain=false` then installed
+`pi5.4` in slot B. Hardware evidence confirmed a new boot ID, firmware tryboot=1,
+and the public command line without diagnostic USB loading. All Talos health
+checks and the DNS/HTTP smoke Job passed. Read-only EFI inspection confirmed
+`config.txt` selected B, `previous.txt` selected A and pending/tryboot files were
+removed. The node UID remained unchanged.
+
+The subsequent explicit rollback did not return online. Source inspection found
+that the Pi's kexec hook returned an error, which aborts the default reboot path
+before the firmware reboot task. Revision `pi5.5` changes that hook to a successful
+no-op and adds a regression test. Its hardware tests and automatic-failure test
+are still in progress; do not treat `pi5.3`/`pi5.4` as qualified upgrade releases.

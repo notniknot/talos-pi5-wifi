@@ -1682,10 +1682,10 @@ index 39f79ec..418dee4 100644
  	}
 diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5.go
 new file mode 100644
-index 0000000..96e96ec
+index 0000000..5629a45
 --- /dev/null
 +++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5.go
-@@ -0,0 +1,202 @@
+@@ -0,0 +1,206 @@
 +// This Source Code Form is subject to the terms of the Mozilla Public
 +// License, v. 2.0. If a copy of the MPL was not distributed with this
 +// file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1698,6 +1698,7 @@ index 0000000..96e96ec
 +	"errors"
 +	"fmt"
 +	"io"
++	"log"
 +	"os"
 +	"path/filepath"
 +	"strings"
@@ -1884,16 +1885,19 @@ index 0000000..96e96ec
 +	return b, nil
 +}
 +
-+// KexecLoad is disabled because the Pi firmware must initialize the hardware.
++// KexecLoad deliberately leaves the machine unprepared for kexec. Returning an
++// error here would abort the default reboot/rollback sequence after services
++// have stopped, before it can reach the required firmware reboot.
 +func (b *Bootloader) KexecLoad(runtime.Runtime, string) error {
-+	return errors.New("Pi 5 direct boot requires a firmware reboot")
++	log.Print("kexec skipped: Pi 5 requires a firmware reboot")
++	return nil
 +}
 diff --git a/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5_test.go b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5_test.go
 new file mode 100644
-index 0000000..a41b312
+index 0000000..ba4efeb
 --- /dev/null
 +++ b/internal/app/machined/pkg/runtime/v1alpha1/bootloader/rpi5/rpi5_test.go
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,98 @@
 +// This Source Code Form is subject to the terms of the Mozilla Public
 +// License, v. 2.0. If a copy of the MPL was not distributed with this
 +// file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1911,6 +1915,13 @@ index 0000000..a41b312
 +	"github.com/siderolabs/talos/internal/app/machined/pkg/runtime/v1alpha1/bootloader/options"
 +	"github.com/siderolabs/talos/internal/pkg/partition"
 +)
++
++func TestKexecSkipsWithoutAbortingFirmwareReboot(t *testing.T) {
++	// A nil runtime is intentional: skipping kexec must not touch the machine
++	// state or mark a kexec image prepared. The sequencer must receive success
++	// so its following Reboot task can arm tryboot and restart via firmware.
++	require.NoError(t, New().KexecLoad(nil, "/dev/unused"))
++}
 +
 +func fixture(t *testing.T) (*Bootloader, options.InstallOptions) {
 +	t.Helper()

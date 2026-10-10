@@ -1,6 +1,6 @@
 {
   "upstream_version": "v1.14.2",
-  "default_version": "v1.14.2-pi5.3",
+  "default_version": "v1.14.2-pi5.5",
   "kernel_version": "6.18.54-talos",
   "talos": {
     "origin": "https://github.com/siderolabs/talos.git",

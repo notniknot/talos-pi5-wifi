@@ -3,7 +3,8 @@
 This port uses Raspberry Pi firmware `tryboot`, not GRUB or UEFI. The A/B layout
 introduced in `v1.14.2-pi5.3` keeps two complete kernel/initramfs/device-tree sets
 inside the existing 1 GiB EFI partition. STATE and EPHEMERAL stay in place.
-Hardware validation of this implementation is in progress; see
+Use revision `pi5.5` or later: `pi5.3`/`pi5.4` have a default-reboot/rollback
+kexec error. Hardware validation of the correction is in progress; see
 [the recorded results](validation.md).
 
 ## Upgrade an A/B installation
