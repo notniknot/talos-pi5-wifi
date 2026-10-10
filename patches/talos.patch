@@ -1,5 +1,5 @@
 diff --git a/Dockerfile b/Dockerfile
-index df1cf7b..fbdf8e0 100644
+index df1cf7b..b4e139b 100644
 --- a/Dockerfile
 +++ b/Dockerfile
 @@ -12,6 +12,8 @@ ARG TOOLS_PREFIX=scratch
@@ -11,9 +11,9 @@ index df1cf7b..fbdf8e0 100644
  ARG PKG_APPARMOR=scratch
  ARG PKG_BTRFSPROGS=scratch
  ARG PKG_CA_CERTIFICATES=scratch
-@@ -705,6 +707,12 @@ KERNEL_VERSION=$(ls usr/lib/modules)
+@@ -732,6 +734,12 @@ KERNEL_VERSION=$(ls usr/lib/modules)
  
- xargs -a modules-amd64.txt -I {} install -D usr/lib/modules/${KERNEL_VERSION}/{} /build/usr/lib/modules/${KERNEL_VERSION}/{}
+ xargs -a modules-arm64.txt -I {} install -D usr/lib/modules/${KERNEL_VERSION}/{} /build/usr/lib/modules/${KERNEL_VERSION}/{}
  
 +# Include the wireless modules and their dependencies from this exact kernel build.
 +find usr/lib/modules/${KERNEL_VERSION}/kernel/net/wireless usr/lib/modules/${KERNEL_VERSION}/kernel/net/mac80211 usr/lib/modules/${KERNEL_VERSION}/kernel/drivers/net/wireless/broadcom -type f -name "*.ko" -exec cp --parents {} /build/ \;
@@ -59,7 +59,7 @@ index df1cf7b..fbdf8e0 100644
  RUN rm -rf /rootfs/usr/share/spdx/*
  COPY --link --from=sbom-arm64 / /rootfs/usr/share/spdx/
  ARG SOURCE_DATE_EPOCH
-@@ -1539,3 +1561,42 @@ COPY --link --from=docs-build /tmp/schemas /website/content/v1.14/schemas/
+@@ -1539,3 +1561,56 @@ COPY --link --from=docs-build /tmp/schemas /website/content/v1.14/schemas/
  FROM scratch AS talosctl-cni-bundle
  ARG TARGETARCH
  COPY --link --from=pkgs-talosctl-cni-bundle /opt/cni/bin/ /talosctl-cni-bundle-${TARGETARCH}/
@@ -102,6 +102,20 @@ index df1cf7b..fbdf8e0 100644
 +COPY --from=go-generate /src/pkg/machinery/config/schemas/ /pkg/machinery/config/schemas/
 +COPY --from=go-generate /src/pkg/machinery/config/types/ /pkg/machinery/config/types/
 +COPY --from=selinux-generate / /internal/pkg/selinux/
++
++# Verify runtime payload, not just that the Wi-Fi controller code compiles.
++FROM rootfs-squashfs-arm64 AS rpi5-image-tests
++RUN set -eu; \
++    modules=/rootfs/usr/lib/modules; \
++    test -s "$modules"/*/kernel/net/wireless/cfg80211.ko; \
++    test -s "$modules"/*/kernel/net/mac80211/mac80211.ko; \
++    test -s "$modules"/*/kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac.ko; \
++    test -s "$modules"/*/kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/wcc/brcmfmac-wcc.ko; \
++    test -s /rootfs/usr/local/bin/wpa_supplicant; \
++    test -s /rootfs/usr/lib/firmware/brcm/brcmfmac43455-sdio.bin; \
++    test -s /rootfs/usr/lib/firmware/brcm/brcmfmac43455-sdio.clm_blob; \
++    test -s /rootfs/usr/lib/firmware/brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.txt; \
++    test -s /rootfs/usr/lib/firmware/regulatory.db
 diff --git a/api/resource/definitions/network/network.proto b/api/resource/definitions/network/network.proto
 index 07d782b..a002351 100755
 --- a/api/resource/definitions/network/network.proto

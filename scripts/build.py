@@ -26,7 +26,7 @@ def run(args, cwd):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('target', choices=['kernel', 'wpa-supplicant', 'wireless-regdb', 'proto', 'generated', 'wifi-tests', 'boot-tests', 'machined', 'initramfs', 'installer', 'talosctl-linux-arm64', 'talosctl-darwin-arm64', 'kernel-export', 'private-initramfs'])
+    parser.add_argument('target', choices=['kernel', 'wpa-supplicant', 'wireless-regdb', 'proto', 'generated', 'wifi-tests', 'boot-tests', 'image-tests', 'machined', 'initramfs', 'installer', 'talosctl-linux-arm64', 'talosctl-darwin-arm64', 'kernel-export', 'private-initramfs'])
     parser.add_argument('--version', default=LOCK['default_version'])
     parser.add_argument('--wifi-config', type=Path)
     args = parser.parse_args()
@@ -49,7 +49,7 @@ def main():
     if args.target == 'kernel-export':
         run(buildx + ['--platform', 'linux/arm64', '-f', 'boot/export-kernel.Dockerfile', '--build-arg', 'KERNEL_IMAGE=' + image('kernel'), '--output', f'type=local,dest={out}', '.'], ROOT)
         return
-    target = {'proto': 'rpi5-proto', 'generated': 'rpi5-generated', 'wifi-tests': 'rpi5-wifi-tests', 'boot-tests': 'rpi5-boot-tests', 'installer': 'rpi5-installer', 'private-initramfs': 'initramfs'}.get(args.target, args.target)
+    target = {'proto': 'rpi5-proto', 'generated': 'rpi5-generated', 'wifi-tests': 'rpi5-wifi-tests', 'boot-tests': 'rpi5-boot-tests', 'image-tests': 'rpi5-image-tests', 'installer': 'rpi5-installer', 'private-initramfs': 'initramfs'}.get(args.target, args.target)
     extras = ['--build-arg', 'PKG_RPI5_WPA=' + image('wpa-supplicant'), '--build-arg', 'PKG_RPI5_REGDB=' + image('wireless-regdb')]
     if args.target == 'private-initramfs':
         if args.wifi_config is None:

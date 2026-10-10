@@ -22,7 +22,7 @@ def main():
         parser.error(f'{output} exists; move it aside before building a new release')
     subprocess.run([sys.executable, str(ROOT / 'scripts/prepare.py')], check=True)
     subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py'], cwd=ROOT, check=True)
-    targets = ['kernel', 'wpa-supplicant', 'wireless-regdb', 'wifi-tests', 'boot-tests', 'kernel-export', 'initramfs', 'installer', 'talosctl-linux-arm64', 'talosctl-darwin-arm64']
+    targets = ['kernel', 'wpa-supplicant', 'wireless-regdb', 'wifi-tests', 'boot-tests', 'image-tests', 'kernel-export', 'initramfs', 'installer', 'talosctl-linux-arm64', 'talosctl-darwin-arm64']
     for target in targets:
         subprocess.run([sys.executable, str(ROOT / 'scripts/build.py'), target, '--version', version], check=True)
     boot = ROOT / '_out/boot'

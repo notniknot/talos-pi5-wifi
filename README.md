@@ -5,11 +5,14 @@ onboard Wi-Fi and an SSD connected through a USB 3 SATA adapter. It boots the
 ARM64 kernel directly through Raspberry Pi firmware and installs Kubernetes
 without Ethernet or a serial debug cable.
 
-**Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.1`.** The original
+**Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.2`.** The original
 v1.15.0-alpha.0 prototype booted on real hardware, ran a single-node cluster,
 and survived reboot and a targeted reset. The stable port passes
 build and disposable-disk installer tests but has **not yet passed hardware validation**. It is not an
 official Sidero Labs image or a production-supported distribution.
+
+Revision `pi5.1` omitted Wi-Fi modules from the ARM64 image. Do not deploy it;
+`pi5.2` corrects the packaging and checks the actual image contents during release builds.
 
 ## What is here
 
@@ -27,7 +30,7 @@ configuration belong in this repository. `_out/` and `private/` are ignored.
 1. Set up a Linux ARM64 BuildKit builder using [the build guide](docs/building.md).
 2. Run `python3 scripts/prepare.py` to fetch the exact sources and apply patches.
 3. Build locally with `python3 scripts/release.py`. This creates public files in
-   `_out/releases/v1.14.2-pi5.1/`; it does not publish or install anything.
+   `_out/releases/v1.14.2-pi5.2/`; it does not publish or install anything.
 4. For a Pi reachable only over Wi-Fi, create a **private** maintenance image and
    follow [the installation guide](docs/installing.md).
 
@@ -52,7 +55,7 @@ experimental distribution. Do not use `+pi5.1`, because `+` is not allowed in
 OCI tags. Never overwrite a published tag.
 
 The planned installer image name is
-`ghcr.io/notniknot/talos-pi5-wifi/installer:v1.14.2-pi5.1`.
+`ghcr.io/notniknot/talos-pi5-wifi/installer:v1.14.2-pi5.2`.
 This name does not imply that an image has already been published. Talos reports
 the complete custom version; `build.json` also records upstream and project
 commits separately. See [local releases](docs/releases.md).

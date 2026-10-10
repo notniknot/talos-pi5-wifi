@@ -39,7 +39,7 @@ The v1.14.2 port uses official Talos commit
 | Initial install into a disposable 8 GiB loop disk | Passed |
 | Upgrade refusal before changes, verified with whole-disk SHA256 | Passed |
 | Private Wi-Fi maintenance image and diagnostic tryboot bundle build | Passed locally; private artifacts excluded from release |
-| Stable port boot, Wi-Fi and Kubernetes on the physical Pi | **Not yet tested** |
+| pi5.1 boot over Wi-Fi on the physical Pi | **Failed: ARM64 image omitted Wi-Fi kernel modules** |
 
 Public boot-bundle SHA256:
 `b94520fb010b598625e773c178b2ae65f14629b5707879f0c136bd66db6fe319`.
@@ -78,3 +78,14 @@ kubectl delete namespace pi5-smoke-test
 Retain private logs and recovery backups locally. Release notes should record
 artifact hashes, Pi revision, adapter model, results, and untested features,
 without personal network identifiers or credentials.
+
+
+## pi5.2 packaging correction
+
+Hardware testing exposed that the wireless-module copy step had been applied to
+`depmod-amd64` rather than `depmod-arm64`. The Pi kernel contained the drivers,
+but its rootfs did not. The copy step now runs in the ARM64 stage. The new
+`image-tests` target checks cfg80211, mac80211, brcmfmac and its WCC module, Wi-Fi
+firmware, wpa_supplicant and the regulatory database in the assembled rootfs.
+It reproduced the failure before the fix and passed after the fix. Local release
+builds now require this check. Hardware recovery/validation is in progress.
