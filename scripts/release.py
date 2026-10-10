@@ -56,7 +56,7 @@ def main():
         ('talosctl-darwin-arm64/talosctl-darwin-arm64', 'talosctl-darwin-arm64'),
         ('kernel-export/kernel.spdx.json', 'kernel.spdx.json'),
     ]:
-        shutil.copyfile(ROOT / '_out' / source, output / name)
+        shutil.copy(ROOT / '_out' / source, output / name)
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT))
     metadata = dict(version=version, upstream_version=LOCK['upstream_version'], project_commit=revision, project_dirty=dirty, hardware_validated=False, sources=LOCK)

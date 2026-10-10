@@ -155,11 +155,39 @@ the SSD to another machine and inspect the EFI boot partition. Preserve an image
 of that partition before editing. On a Mac, use `diskutil list` and positively
 identify the SSD; never reuse someone else's `diskN` identifier.
 
-To opt into early diagnostics, append `talos.rpi5.diag=1` to EFI `cmdline.txt` and
-copy that command line into an EFI `talos-test/cmdline.txt` marker file. Do not
-add `talos.rpi5.test_timeout` to a permanent installation. After a failed boot,
-retrieve `talos-test/boot-*.log` locally. This diagnostic code assumes the USB SSD
-is `/dev/sda1`; do not use it on another layout without adapting the source.
+To opt into early diagnostics on an installed A/B image, work on the powered-off
+Pi's EFI partition after backing it up:
+
+1. Inspect `config.txt` and follow its `cmdline=` path. Current installations
+   select `talos/A/cmdline.txt` or `talos/B/cmdline.txt`; editing a root-level
+   `cmdline.txt` has no effect. Do not guess the active slot or change its selector.
+   If `talos-pending.json` exists, a trial is pending and `tryboot.txt` may select
+   the other slot. Recover/resolve that trial before editing either slot.
+2. Verify the selected slot's files against its `manifest.json`, then save
+   off-device copies of that slot's `cmdline.txt` and `manifest.json`. Do not
+   recompute checksums to hide an existing mismatch.
+3. Append `talos.rpi5.diag=1` to the selected slot's single-line command line,
+   preserving its other arguments. Update only the `cmdline.txt` SHA256 entry in
+   that same slot's `manifest.json` to match the intentional edit; verify all
+   entries again. Leaving the manifest stale breaks slot verification for
+   upgrades/rollback.
+4. Create `talos-test/` at the EFI root if necessary and copy the edited command
+   line into `talos-test/cmdline.txt`. This is a diagnostic opt-in marker, not the
+   A/B boot command line. Both the boot argument and marker are required. Sync
+   and safely eject the SSD before reconnecting it to the Pi.
+5. After the diagnostic boot, retrieve `talos-test/boot-*.log`. With the Pi off,
+   restore the backed-up slot command line and manifest, verify their hashes,
+   and remove the diagnostic marker (or restore its previous contents) before
+   normal operation and upgrades. Leave the other slot unchanged.
+
+For a pre-install Raspberry Pi OS tryboot, use
+`python3 scripts/assemble-boot.py --private --diagnostics` instead: its
+`tryboot.txt` selects `talos-test/cmdline.txt` directly. The root-level command
+line applies only to legacy flat layouts; always inspect the firmware selector.
+Do not add `talos.rpi5.test_timeout` to a permanent installation. Diagnostic
+logging assumes the USB SSD is `/dev/sda1`; another layout requires adapting the
+source. Diagnostics also load USB modules early, so this is not a test of normal
+boot behavior.
 
 The alpha prototype recovered after replacing EFI's initramfs with the matching
 private initramfs and enabling diagnostics. Keep kernel and initramfs from the
