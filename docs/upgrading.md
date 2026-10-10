@@ -5,8 +5,8 @@ introduced in `v1.14.2-pi5.3` keeps two complete kernel/initramfs/device-tree se
 inside the existing 1 GiB EFI partition. STATE and EPHEMERAL stay in place.
 Use revision `pi5.6` or later: `pi5.3`/`pi5.4` have a default-reboot/rollback
 kexec error, and `pi5.5` exposed an apparent USB startup-order dependency.
-Native upgrade, explicit rollback and an unhealthy-boot fallback have passed
-hardware tests; pre-Linux hang recovery remains under investigation. See
+Native upgrade, explicit rollback, unhealthy-boot fallback and watchdog recovery
+from a deliberate hang at the kernel entry point have passed hardware tests. See
 [the recorded results](validation.md) for the exact scope.
 
 ## Upgrade an A/B installation

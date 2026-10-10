@@ -8,8 +8,10 @@ without Ethernet or a serial debug cable.
 **Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.6`.** This revision
 has booted the public image over Wi-Fi without diagnostic flags, preserved the
 existing single-node cluster and passed Talos health checks. The port now has
-firmware A/B upgrades and readiness-gated slot confirmation; hardware failure
-and rollback results are recorded in [validation](docs/validation.md). This is
+firmware A/B upgrades and readiness-gated slot confirmation. Native upgrades,
+explicit rollback and automatic recovery from a deliberately hung kernel have
+passed hardware tests; exact results and limits are recorded in
+[validation](docs/validation.md). This is
 not an official Sidero Labs image or a production-supported distribution.
 
 Earlier revisions exposed missing Wi-Fi modules (`pi5.1`), a default reboot error

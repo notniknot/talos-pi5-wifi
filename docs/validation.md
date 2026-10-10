@@ -197,8 +197,40 @@ The first synthetic pre-Linux hang fixture used a truncated 4 KiB ARM64 image.
 It did not return online within fifteen minutes of losing API access, so this
 is **not** a successful early-kernel watchdog test. A firmware rejection before
 kernel handoff is one possible explanation, not a confirmed cause. Recovery via
-a cold power cycle is pending physical access to the Pi. The revised fixture preserves the complete
-kernel image and changes only its entry branch; its hardware test is pending.
+a cold power cycle also failed to restore observed network access. Read-only SSD
+inspection found a clean FAT filesystem, the healthy A selector and assets intact,
+and pending/tryboot files already absent. Their absence suggests the OS cleared
+the trial at some point, but neither the timing nor the connectivity failure is
+established. Enabling existing boot diagnostics restored access; this changes
+early USB initialization, so it does not isolate the cause.
+
+On 2026-10-10, a repeat native upgrade with the **default reboot mode** installed
+public `pi5.6` in B without diagnostic flags. Firmware reported tryboot=1 and
+boot count 2. All health checks and DNS/HTTP smoke tests passed. EFI inspection
+confirmed B was committed, A was retained as the previous slot, and pending
+metadata was cleared.
+
+The revised failure fixture preserves the entire 65,169,920-byte kernel image,
+including its header, and changes only the ARM64 entry branch at offset 4 to
+`B .`. Its installed kernel SHA256 was
+`4f7ff2df3954e88358b0ca7318db5a1e9e098df0a192cd7d43a3949db3cec898`.
+A native upgrade staged this deliberately hung kernel in A. **Without a manual
+power cycle**, the Pi returned to healthy public B roughly a minute after API
+access disappeared. The boot ID changed, firmware count advanced from 2 to 4,
+tryboot was 0 and reset status was `0x20`. All Talos/Kubernetes health checks
+passed and the original node UID was preserved. Read-only EFI inspection verified
+the exact hung kernel remained in A, healthy B was still selected, and
+pending/tryboot metadata had been removed. This demonstrates automatic watchdog
+fallback after kernel handoff; it does not demonstrate recovery from a firmware
+loader hang before handoff. EEPROM `BOOT_WATCHDOG_TIMEOUT` was not configured or
+validated in this test.
+
+A subsequent native upgrade restored the public image in A. It passed all health
+checks and DNS/HTTP smoke tests. EFI verification found A committed, B retained
+for explicit rollback, both kernels and initramfs files matching the public
+release, and no diagnostic flags or pending trial. The two failure-test images
+and their cache aliases were removed from the node; temporary privileged and
+smoke-test namespaces were deleted. Cluster node identity remained unchanged.
 
 The exact public `pi5.6` artifacts tested have these SHA256 values:
 
