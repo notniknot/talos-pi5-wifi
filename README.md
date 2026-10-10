@@ -5,14 +5,14 @@ onboard Wi-Fi and an SSD connected through a USB 3 SATA adapter. It boots the
 ARM64 kernel directly through Raspberry Pi firmware and installs Kubernetes
 without Ethernet or a serial debug cable.
 
-**Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.6`.** This revision
-has booted the public image over Wi-Fi without diagnostic flags, preserved the
-existing single-node cluster and passed Talos health checks. The port now has
-firmware A/B upgrades and readiness-gated slot confirmation. Native upgrades,
-explicit rollback and automatic recovery from a deliberately hung kernel have
-passed hardware tests; exact results and limits are recorded in
-[validation](docs/validation.md). This is
-not an official Sidero Labs image or a production-supported distribution.
+**Current stable-base port: Talos v1.14.2 → `v1.14.2-pi5.7`.** A second Pi
+passed fresh installation of `pi5.6` and a native upgrade to this revision,
+including slot confirmation, a cold boot, cluster identity preservation and
+DNS/HTTP tests.
+The preceding `pi5.6` image also passed explicit rollback, automatic recovery
+from a deliberately hung kernel, and a public cold boot over Wi-Fi. Exact results
+and limits are recorded in [validation](docs/validation.md). This is not an
+official Sidero Labs image or a production-supported distribution.
 
 Earlier revisions exposed missing Wi-Fi modules (`pi5.1`), a default reboot error
 (`pi5.3`/`pi5.4`), and an apparent USB startup-order dependency (`pi5.5`). Use the
@@ -31,10 +31,15 @@ configuration belong in this repository. `_out/` and `private/` are ignored.
 
 ## Start here
 
+For the existing two-node cluster, use the [operations runbook](docs/runbook.md)
+for new upstream ports, upgrades, fresh installs and Wi-Fi-preserving resets.
+The [TOPF guide](docs/topf.md) covers the required custom management-client build
+and importing the cluster without replacing its identity.
+
 1. Set up a Linux ARM64 BuildKit builder using [the build guide](docs/building.md).
 2. Run `python3 scripts/prepare.py` to fetch the exact sources and apply patches.
 3. Build locally with `python3 scripts/release.py`. This creates public files in
-   `_out/releases/v1.14.2-pi5.6/`; it does not publish or install anything.
+   `_out/releases/v1.14.2-pi5.7/`; it does not publish or install anything.
 4. For a Pi reachable only over Wi-Fi, create a **private** maintenance image and
    follow [the installation guide](docs/installing.md).
 
@@ -59,17 +64,17 @@ experimental distribution. Do not use `+pi5.1`, because `+` is not allowed in
 OCI tags. Never overwrite a published tag.
 
 The planned installer image name is
-`ghcr.io/notniknot/talos-pi5-wifi/installer:v1.14.2-pi5.6`.
+`ghcr.io/notniknot/talos-pi5-wifi/installer:v1.14.2-pi5.7`.
 This name does not imply that an image has already been published. Talos reports
 the complete custom version; `build.json` also records upstream and project
 commits separately. See [local releases](docs/releases.md).
 
 ## Scope and known limitations
 
-The tested prototype used a D0 Pi 5 with 8 GB RAM and an Intenso 120 GB SSD through
-a USB SATA adapter. Other Pi revisions, adapters and Wi-Fi environments need
-validation. Stable Talos v1.14.2 brings kernel `6.18.54-talos`; the tested alpha
-prototype used `6.18.48-talos`.
+Hardware tests used two D0 Pi 5 boards with 8 GB RAM and USB SATA adapters,
+with an Intenso 120 GB SSD and a Samsung SSD 830 Series 128 GB. Other Pi
+revisions, adapters and Wi-Fi environments need validation. Stable Talos v1.14.2
+brings kernel `6.18.54-talos`; the tested alpha prototype used `6.18.48-talos`.
 
 - Upgrades use two boot slots and firmware tryboot with a hardware watchdog.
   Legacy `pi5.1`/`pi5.2` installations need a
@@ -85,9 +90,10 @@ prototype used `6.18.48-talos`.
 - Wi-Fi power saving is disabled for this Pi profile. Keep the antenna clear of
   the USB SSD/dock, and provide a suitable power supply. RF placement mattered in
   the prototype.
-- Fresh installation of the current A/B image, long-term Wi-Fi reliability,
-  multi-node operation and secure boot remain unvalidated. See the recorded
-  hardware tests rather than treating a successful build as full qualification.
+- A two-node control-plane/worker cluster passed bidirectional DNS/HTTP and
+  1 MiB transfer tests with KubeSpan enabled. Long-term Wi-Fi reliability,
+  larger fleets and secure boot remain unvalidated. See the recorded hardware
+  tests rather than treating a successful build as full qualification.
 
 ## Sources and license
 

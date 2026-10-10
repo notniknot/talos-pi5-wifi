@@ -51,7 +51,7 @@ Optional environment variables:
 ```sh
 python3 scripts/prepare.py
 python3 -m unittest discover -s tests -p 'test_*.py'
-python3 scripts/release.py --version v1.14.2-pi5.6
+python3 scripts/release.py --version v1.14.2-pi5.7
 ```
 
 Preparation checks exact Git commits and asset hashes. Existing source trees
@@ -94,7 +94,7 @@ python3 scripts/wifi-config.py
 _out/talosctl-darwin-arm64/talosctl-darwin-arm64 validate \
   --config private/maintenance.yaml --mode metal --strict
 python3 scripts/build.py private-initramfs --wifi-config private/maintenance.yaml
-python3 scripts/assemble-boot.py --private --diagnostics
+python3 scripts/assemble-boot.py --private
 ```
 
 Use the Linux client on Linux. `wifi-config.py` prompts for credentials without
@@ -108,6 +108,7 @@ BuildKit cache **contain that secret**. Protect both the builder and
 cache to a public registry, or use the private initramfs as a release artifact.
 Local release packaging uses an explicit public file allowlist.
 
+Add `--diagnostics` to the assembly command only when investigating boot failures.
 The Pi diagnostic option logs early boot to `talos-test/boot-*.log`. It does not
 set `talos.rpi5.test_timeout`, which would arm a reboot watchdog. Keep that option
 out of permanent installations.

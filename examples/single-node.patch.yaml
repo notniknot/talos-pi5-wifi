@@ -1,9 +1,15 @@
 # Merge this into a locally generated controlplane config, then append the
 # private WifiConfig / LinkConfig / DHCPv4Config documents to the result.
-machine:
-  install:
-    disk: /dev/sda # Verify the actual SSD before applying: installation erases it.
-    image: ghcr.io/notniknot/talos-pi5-wifi/installer:v1.14.2-pi5.6
-    wipe: false
-cluster:
-  allowSchedulingOnControlPlanes: true
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+installer:
+  image: ghcr.io/notniknot/talos-pi5-wifi/installer:v1.14.2-pi5.7
+provisioning:
+  diskSelector:
+    match: disk.dev_path == "/dev/sda" # Verify the SSD: installation erases it.
+  wipe: false
+---
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+taints:
+  $patch: delete
