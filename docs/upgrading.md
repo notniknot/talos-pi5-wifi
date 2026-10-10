@@ -3,9 +3,11 @@
 This port uses Raspberry Pi firmware `tryboot`, not GRUB or UEFI. The A/B layout
 introduced in `v1.14.2-pi5.3` keeps two complete kernel/initramfs/device-tree sets
 inside the existing 1 GiB EFI partition. STATE and EPHEMERAL stay in place.
-Use revision `pi5.5` or later: `pi5.3`/`pi5.4` have a default-reboot/rollback
-kexec error. Hardware validation of the correction is in progress; see
-[the recorded results](validation.md).
+Use revision `pi5.6` or later: `pi5.3`/`pi5.4` have a default-reboot/rollback
+kexec error, and `pi5.5` exposed an apparent USB startup-order dependency.
+Native upgrade, explicit rollback and an unhealthy-boot fallback have passed
+hardware tests; pre-Linux hang recovery remains under investigation. See
+[the recorded results](validation.md) for the exact scope.
 
 ## Upgrade an A/B installation
 
@@ -86,6 +88,44 @@ Firmware references:
 [Raspberry Pi tryboot](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#fail-safe-os-updates-tryboot),
 [kernel watchdog](https://www.raspberrypi.com/documentation/computers/config_txt.html#kernel_watchdog_timeout),
 [bootloader watchdog](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#BOOT_WATCHDOG_TIMEOUT).
+
+## Reproduce the pre-Linux failure test
+
+Use a disposable lab node with a healthy, committed A/B image, off-device backups
+and physical recovery access. This fixture intentionally hangs the CPU before
+Linux starts; it must never be tagged or published as a release. The generator
+only creates a new local build context and refuses to overwrite an existing path:
+
+```sh
+python3 scripts/make-hang-fixture.py \
+  --kernel _out/kernel-export/Image --output _out/hang-fixture
+podman build --pull=never \
+  --build-arg BASE=YOUR_LOCALLY_LOADED_PUBLIC_INSTALLER \
+  -t YOUR_LOCAL_REGISTRY/installer:private-hang-test _out/hang-fixture
+```
+
+Push that fixture only to your test registry and record its manifest digest.
+Record the running version, boot ID and firmware boot counter before upgrading
+through the normal Talos API. `--namespace cri` uses the persistent image store,
+which allows subsequent tests to reuse installer layers after a reboot:
+
+```sh
+talosctl --context YOUR_PI_CONTEXT version
+talosctl --context YOUR_PI_CONTEXT read /proc/sys/kernel/random/boot_id
+talosctl --context YOUR_PI_CONTEXT read /proc/device-tree/chosen/bootloader/count \
+  | od -An -tx1
+talosctl --context YOUR_PI_CONTEXT upgrade --namespace cri \
+  --image YOUR_LOCAL_REGISTRY/installer@sha256:YOUR_FAILURE_FIXTURE_DIGEST \
+  --reboot-mode=powercycle --drain=false --wait --timeout=20m
+```
+
+Do not power-cycle during the observation window: that would make the automatic
+recovery result inconclusive. After recovery, require the original server
+version, a changed boot ID, a firmware boot-count increase consistent with both
+the trial and fallback, and successful Talos/Kubernetes health checks. The counter
+is a four-byte big-endian value and resets on a cold power cycle. A successful
+CLI wait is not sufficient. Finally, upgrade to the real public installer again
+to replace the broken inactive slot, and verify its version and health.
 
 ## One-time migration from pi5.1/pi5.2
 

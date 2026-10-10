@@ -177,6 +177,36 @@ changed to `0x20`, and the fallback reported tryboot=0. All Talos health checks
 passed. EFI inspection confirmed B remained selected, pending/tryboot metadata
 was cleared, and the candidate assets still matched their manifest. The CLI
 upgrade wait returned success despite fallback, so verify the running server
-version separately. Investigation of the candidate boot failure and the explicit
-rollback test are still in progress; none of these A/B revisions is fully
-qualified yet.
+version separately. A retry of the same `pi5.5` assets with diagnostic early USB loading enabled
+booted slot A successfully, passed all health checks and committed A with B as
+its previous slot. Plain `talosctl rollback` then returned to `pi5.4` in slot B
+with tryboot=1, passed all health checks, committed B, and retained A as the
+previous slot. This validates the corrected default reboot path, but does not
+qualify the unmodified `pi5.5` boot path.
+
+Revision `pi5.6`, built from clean project commit `12de789`, preloads Pi USB host
+and storage modules in the existing Pi-specific udev startup hook. This is a
+focused mitigation for the apparent boot-order dependency; the failed `pi5.5`
+trial did not provide logs proving its precise cause. Its full local release and
+disposable-disk checks passed. A normal `talosctl upgrade --namespace cri` then
+booted the public `pi5.6` image in slot A without diagnostic flags. Firmware
+reported tryboot=1, all health checks passed, and EFI inspection confirmed A was
+committed with B as the previous slot and no pending/tryboot metadata remaining.
+The original Kubernetes node UID has remained unchanged through completed tests.
+The first synthetic pre-Linux hang fixture used a truncated 4 KiB ARM64 image.
+It did not return online within fifteen minutes of losing API access, so this
+is **not** a successful early-kernel watchdog test. A firmware rejection before
+kernel handoff is one possible explanation, not a confirmed cause. Recovery via
+a cold power cycle is pending physical access to the Pi. The revised fixture preserves the complete
+kernel image and changes only its entry branch; its hardware test is pending.
+
+The exact public `pi5.6` artifacts tested have these SHA256 values:
+
+- Boot bundle: `9de8f4783edd70820768182ffd7662ade50236e930c26553158a36837f95c77d`.
+- Installer OCI archive: `51de1603f482d9cf32dee70ab77fab62b4ff8e81a66e6a83635e7973541778cd`.
+- Local-registry installer manifest: `eb9c581c8c1be75338fd936d32a1906351af1344fec7517df01898831bdbe7fa`.
+- Installed kernel: `e64d3eb7f60d54dd6507b5e7635bda9b575784d11c90f301f2cba324f9341c28`.
+- Installed initramfs: `2d58e49c97408ee04a59e6a0e83e1644f7bb51456eced5b02f446ae59f52ad54`.
+
+The registry manifest digest depends on OCI-to-registry layer representation;
+verify the digest returned by your own registry when publishing the archive.
