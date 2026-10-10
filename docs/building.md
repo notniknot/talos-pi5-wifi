@@ -51,7 +51,7 @@ Optional environment variables:
 ```sh
 python3 scripts/prepare.py
 python3 -m unittest discover -s tests -p 'test_*.py'
-python3 scripts/release.py --version v1.14.2-pi5.2
+python3 scripts/release.py --version v1.14.2-pi5.3
 ```
 
 Preparation checks exact Git commits and asset hashes. Existing source trees

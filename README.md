@@ -69,8 +69,9 @@ a USB SATA adapter. Other Pi revisions, adapters and Wi-Fi environments need
 validation. Stable Talos v1.14.2 brings kernel `6.18.54-talos`; the tested alpha
 prototype used `6.18.48-talos`.
 
-- Initial installation is implemented. **Upgrade and rollback deliberately fail**
-  because this direct-boot layout does not implement Talos A/B boot semantics.
+- `pi5.3` introduces firmware tryboot upgrades and rollback with separate boot
+  slots and a boot watchdog. Hardware validation is in progress; legacy
+  installations need a [one-time migration](docs/upgrading.md).
 - Only SELinux permissive mode has been tested on hardware. The Wi-Fi policy is
   included, but enforcing mode needs validation.
 - WPA2 personal was tested; the backport also implements WPA3 personal. Enterprise

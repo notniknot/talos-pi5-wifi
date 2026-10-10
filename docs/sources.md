@@ -52,3 +52,10 @@ terms, not under this repository's MPL license.
 Kernel, wpa_supplicant and wireless-regdb package SBOMs are included by the Talos
 rootfs build. The downloaded board firmware is separately identified by the lock
 and its license notice; the package SBOM alone is not a complete firmware inventory.
+
+## Pi firmware upgrade support
+
+The kernel patch uses the downstream Raspberry Pi firmware mailbox protocol
+(`RPI_FIRMWARE_SET_REBOOT_FLAGS`, 0x00038064) for the exact `0 tryboot` restart
+argument. Normal reboot is unchanged. Protocol reference:
+https://github.com/raspberrypi/linux/blob/rpi-6.18.y/drivers/firmware/raspberrypi.c
